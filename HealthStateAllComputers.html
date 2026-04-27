@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Health State Overview</title>
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/highcharts.js"></script>
+    <script src="/dashboardlibs/highcharts-3d.js"></script>
+    <script src="/dashboardlibs/modules/exporting.js"></script>
+    <style>
+        :root {
+            --ui-font: "Segoe UI", Arial, sans-serif;
+            --bg: #f8fafc;
+            --panel: #ffffff;
+            --border: #dbe3ee;
+            --text: #0f172a;
+            --muted: #64748b;
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+        }
+
+        body {
+            margin: 0;
+            padding: 10px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--ui-font);
+        }
+
+        .widget-shell {
+            position: relative;
+            min-height: 460px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+            flex-wrap: wrap;
+        }
+
+        .controls-left {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 260px;
+        }
+
+        .controls-left .title {
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .controls-left .summary {
+            font-size: 13px;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 760px;
+        }
+
+        .controls-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            height: 34px;
+            font-size: 13px;
+            font-family: var(--ui-font);
+            border-radius: 10px;
+            border: 1px solid var(--primary);
+            background: var(--primary);
+            color: #fff;
+            padding: 0 12px;
+            box-sizing: border-box;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: var(--primary-dark);
+        }
+
+        #message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        #message.is-error {
+            color: #b00020;
+            border-color: #f0c2c2;
+        }
+
+        #stateContainer {
+            position: relative;
+            z-index: 2;
+            height: 380px;
+            width: 100%;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+            overflow: hidden;
+        }
+
+        .brand-badge {
+            position: fixed;
+            right: 30px;
+            bottom: 26px;
+            z-index: 1;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(203, 213, 225, 0.9);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .brand-watermark {
+            display: block;
+            width: min(220px, 18vw);
+            max-width: 240px;
+            opacity: 1;
+            filter: saturate(1.08) contrast(1.04);
+        }
+
+        @media (max-width: 900px) {
+            .controls {
+                align-items: flex-start;
+            }
+
+            .controls-right {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .brand-badge {
+                right: 18px;
+                bottom: 18px;
+                padding: 8px 10px;
+                border-radius: 12px;
+            }
+
+            .brand-watermark {
+                width: min(160px, 34vw);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="widget-shell">
+        <div class="controls">
+            <div class="controls-left">
+                <div class="title">Health State of Windows Computers</div>
+                <div id="summary" class="summary">Initializing...</div>
+            </div>
+            <div class="controls-right">
+                <button id="refreshBtn" type="button">Refresh</button>
+            </div>
+        </div>
+
+        <div id="message">Ready.</div>
+        <div id="stateContainer"></div>
+    </div>
+    <div class="brand-badge">
+        <img class="brand-watermark" src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo">
+    </div>
+
+    <script type="text/javascript">
+        var GROUP_ID = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+        var criticalCounter = 0;
+        var healthyCounter = 0;
+        var warningCounter = 0;
+        var unmonitoredCounter = 0;
+
+        var requestHeaders = {
+            Accept: "q=0.8;application/json;q=0.9",
+            "Content-Type": "application/json"
+        };
+
+        (function initializeCsrfToken() {
+            var match = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+            if (match) {
+                requestHeaders["SCOM-CSRF-TOKEN"] = decodeURIComponent(match[1]);
+            }
+        })();
+
+        function setMessage(text, isError) {
+            $("#message").toggleClass("is-error", !!isError).text(text || "");
+        }
+
+        function normalizeHealthState(value) {
+            if (value == null || value === "") return "unmonitored";
+
+            var state = String(value).trim().toLowerCase();
+
+            if (state === "3" || state === "critical" || state === "error") return "critical";
+            if (state === "2" || state === "warning") return "warning";
+            if (state === "1" || state === "healthy" || state === "success") return "healthy";
+
+            if (
+                state === "0" ||
+                state === "unmonitored" ||
+                state === "unknown" ||
+                state === "notmonitored" ||
+                state === "not monitored" ||
+                state === "uninitialized" ||
+                state === "monitoring unavailable"
+            ) {
+                return "unmonitored";
+            }
+
+            return "unmonitored";
+        }
+
+        function resetCounters() {
+            criticalCounter = 0;
+            healthyCounter = 0;
+            warningCounter = 0;
+            unmonitoredCounter = 0;
+        }
+
+        function updateSummary(total) {
+            $("#summary").text("Group: Demo Windows Computers | Computers in scope: " + total);
+        }
+
+        function loadData() {
+            resetCounters();
+            $("#refreshBtn").prop("disabled", true).text("Loading...");
+            setMessage("Loading health state distribution...", false);
+
+            $.ajax({
+                url: "/OperationsManager/data/state",
+                type: "POST",
+                headers: requestHeaders,
+                contentType: "application/json; charset=utf-8",
+                dataType: "json",
+                processData: false,
+                data: JSON.stringify({
+                    classId: "System.Library!System.Computer",
+                    objectIds: { [GROUP_ID]: -1 },
+                    criteria: "((HealthState = '0') OR (HealthState = '1') OR (HealthState = '2') OR (HealthState = '3') OR HealthState is null)",
+                    displayColumns: ["healthstate", "displayname", "path", "maintenancemode"]
+                }),
+                success: function (result) {
+                    (result.rows || []).forEach(function (row) {
+                        switch (normalizeHealthState(row.healthstate)) {
+                            case "critical":
+                                criticalCounter++;
+                                break;
+                            case "healthy":
+                                healthyCounter++;
+                                break;
+                            case "warning":
+                                warningCounter++;
+                                break;
+                            case "unmonitored":
+                                unmonitoredCounter++;
+                                break;
+                        }
+                    });
+                    renderStateChart();
+                },
+                error: function (xhr, status, err) {
+                    console.error("AJAX error:", status, err);
+                    $("#stateContainer").html("<div style='padding:24px;color:#b00020;font-family:Segoe UI, Arial, sans-serif;'>Failed to load health state data.</div>");
+                    updateSummary(0);
+                    setMessage("Failed to load health state distribution.", true);
+                },
+                complete: function () {
+                    $("#refreshBtn").prop("disabled", false).text("Refresh");
+                }
+            });
+        }
+
+        function renderStateChart() {
+            var total = criticalCounter + healthyCounter + warningCounter + unmonitoredCounter;
+            updateSummary(total);
+
+            if (total === 0) {
+                $("#stateContainer").html("<div style='padding:24px;color:#64748b;font-family:Segoe UI, Arial, sans-serif;'>No health state data found.</div>");
+                setMessage("No health state data found in the selected scope.", false);
+                return;
+            }
+
+            Highcharts.chart("stateContainer", {
+                chart: {
+                    type: "column",
+                    backgroundColor: "#ffffff",
+                    options3d: {
+                        enabled: true,
+                        alpha: 10,
+                        beta: 0,
+                        depth: 30
+                    }
+                },
+                title: { text: "Health State of Windows Computers" },
+                xAxis: {
+                    categories: ["Critical", "Healthy", "Warning", "Unmonitored"],
+                    title: { text: null }
+                },
+                yAxis: {
+                    min: 0,
+                    title: { text: "Number of computers", align: "high" },
+                    labels: { overflow: "justify" }
+                },
+                tooltip: {
+                    pointFormat: "<b>{point.y}</b> devices ({point.percentage:.1f}%)"
+                },
+                plotOptions: {
+                    column: {
+                        depth: 30,
+                        dataLabels: { enabled: true, format: "{point.y}" }
+                    }
+                },
+                series: [{
+                    name: "Health State",
+                    colorByPoint: true,
+                    data: [
+                        { name: "Critical", y: criticalCounter, color: "#dc2626" },
+                        { name: "Healthy", y: healthyCounter, color: "#16a34a" },
+                        { name: "Warning", y: warningCounter, color: "#f59e0b" },
+                        { name: "Unmonitored", y: unmonitoredCounter, color: "#6b7280" }
+                    ]
+                }],
+                exporting: { enabled: true }
+            });
+
+            setMessage("Health state distribution loaded successfully.", false);
+        }
+
+        $(function () {
+            $("#refreshBtn").on("click", loadData);
+            loadData();
+        });
+    </script>
+</body>
+</html>

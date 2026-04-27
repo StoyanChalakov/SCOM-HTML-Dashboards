@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SCOM Performance Dashboard - Small Multiples (Optimized)</title>
+
+    <!-- jQuery & CanvasJS (local environment) -->
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/canvasjs.min.js"></script>
+
+  <style>
+    :root{
+      --ui-font: "Segoe UI", Arial, Helvetica, sans-serif;
+      --ui-font-size: 12px;
+      --border: #ddd;
+      --bg: #f5f5f5;
+      --panel: #fff;
+      --muted: #666;
+      --error: #b00020;
+      --ok: #0b6b3a;
+      --warn: #9a6a00;
+      --bad: #b00020;
+    }
+
+    html, body { height: 100%; }
+    body{
+      font-family: var(--ui-font);
+      font-size: var(--ui-font-size);
+      margin:0;
+      background: var(--bg);
+      overflow:hidden;
+    }
+
+    #app{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      padding:10px;
+      box-sizing:border-box;
+    }
+
+    #topBar{
+      position:sticky;
+      top:0;
+      z-index:10;
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:8px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+
+    #topLeft{ min-width:0; display:flex; flex-direction:column; gap:4px; }
+    #title{ font-size:14px; font-weight:600; line-height:1.2; }
+    #summary{
+      color:#333;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    #topRight{ display:flex; gap:8px; align-items:center; }
+
+    button{
+      height:28px;
+      font-size: var(--ui-font-size);
+      font-family: var(--ui-font);
+      padding:0 10px;
+      cursor:pointer;
+      border:1px solid var(--border);
+      background:#fff;
+      border-radius:4px;
+    }
+    button.primary{
+      background:#1f6feb;
+      border-color:#1f6feb;
+      color:#fff;
+    }
+    button:disabled{ opacity:.6; cursor:default; }
+
+    #filters{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:10px;
+    }
+    #filters.is-collapsed{ display:none; }
+
+    #filtersGrid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:10px;
+      align-items:end;
+    }
+
+    .field{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .field label{ font-weight:600; }
+    .picker-row{ display:flex; gap:8px; align-items:center; min-width:0; }
+    .picker-row select{ flex:1 1 auto; }
+    .picker-row button{ flex:0 0 auto; }
+
+    select, input{
+      height:28px;
+      font-size: var(--ui-font-size);
+      font-family: var(--ui-font);
+      padding:2px 8px;
+      border:1px solid var(--border);
+      border-radius:4px;
+      box-sizing:border-box;
+      width:100%;
+      background:#fff;
+    }
+
+    .span-2{ grid-column: span 2; }
+    .span-4{ grid-column: span 4; }
+    .span-6{ grid-column: span 6; }
+
+    @media (max-width: 1200px){
+      .span-2,.span-4,.span-6{ grid-column: span 12; }
+      #topBar{ flex-direction:column; align-items:flex-start; }
+      #topRight{ width:100%; justify-content:flex-end; }
+    }
+
+    #message{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:6px 10px;
+      color: var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #message.is-error{ color: var(--error); border-color: #f0c2c2; }
+
+    #scrollArea{
+      flex:1 1 auto;
+      overflow:auto;
+      padding-right:4px;
+    }
+
+    .server-row{
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius:8px;
+      margin-bottom:8px;
+      padding:10px;
+      display:grid;
+      grid-template-columns: 220px repeat(4, minmax(220px, 1fr));
+      gap:10px;
+      align-items:stretch;
+    }
+
+    .srv{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      justify-content:center;
+    }
+    .srv .host{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .srv .friendly{ color: var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    .metric{
+      border:1px solid #eee;
+      border-radius:8px;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      min-width:0;
+    }
+    .metric.cpu{ box-shadow: inset 0 3px 0 #d97706; }
+    .metric.ram{ box-shadow: inset 0 3px 0 #0f766e; }
+    .metric.c{ box-shadow: inset 0 3px 0 #15803d; }
+    .metric.d{ box-shadow: inset 0 3px 0 #7c3aed; }
+    .metric .top{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      gap:10px;
+      min-width:0;
+    }
+    .metric .label{ font-weight:700; }
+    .metric .value{
+      font-size:18px;
+      font-weight:800;
+      white-space:nowrap;
+    }
+    .value.ok{ color: var(--ok); }
+    .value.warn{ color: var(--warn); }
+    .value.bad{ color: var(--bad); }
+
+    .spark{
+      height:92px;
+      width:100%;
+      min-width:0;
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+
+  <div id="topBar">
+    <div id="topLeft">
+      <div id="title">Small Multiples - System Overview</div>
+      <div id="summary">Initializing…</div>
+    </div>
+    <div id="topRight">
+      <button id="toggleFiltersBtn" type="button">Hide filters</button>
+      <button id="refreshBtn" class="primary" type="button">Refresh</button>
+    </div>
+  </div>
+
+  <div id="filters">
+    <div id="filtersGrid">
+      <div class="field span-6">
+        <label for="groupSelect">Group</label>
+        <div class="picker-row">
+          <select id="groupSelect">
+            <option value="">Loading groups...</option>
+          </select>
+          <button id="reloadGroupsBtn" type="button">Reload Groups</button>
+        </div>
+      </div>
+
+      <div class="field span-2">
+        <label for="daysSelect">Range (days)</label>
+        <select id="daysSelect"></select>
+      </div>
+
+      <div class="field span-2">
+        <label for="startDateTimeSelect">Start</label>
+        <input type="datetime-local" id="startDateTimeSelect">
+      </div>
+
+      <div class="field span-2">
+        <label for="endDateTimeSelect">End</label>
+        <input type="datetime-local" id="endDateTimeSelect">
+      </div>
+
+      <div class="field span-4">
+        <label for="sortSelect">Sort</label>
+        <select id="sortSelect">
+          <option value="name">Name (A-Z)</option>
+          <option value="cpu_desc">CPU highest</option>
+          <option value="ram_desc">RAM highest</option>
+          <option value="c_asc">C: % Free lowest</option>
+          <option value="d_asc">D: % Free lowest</option>
+        </select>
+      </div>
+
+      <div class="field span-4">
+        <label for="filterText">Filter (host / friendly)</label>
+        <input id="filterText" type="text" placeholder="e.g. server01 / app01">
+      </div>
+    </div>
+  </div>
+
+  <div id="message">Ready.</div>
+
+  <div id="scrollArea">
+    <div id="dashboard"></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  // =========================
+  // 0) CSRF + headers
+  // =========================
+  var requestHeaders = { Accept:"q=0.8;application/json;q=0.9", "Content-Type":"application/json" };
+  (function(){
+    var m = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+    if (m) requestHeaders["SCOM-CSRF-TOKEN"] = decodeURIComponent(m[1]);
+  })();
+
+  // =========================
+  // 1) Helpers
+  // =========================
+  function pad2(v){ return (v<10?'0':'')+v; }
+
+  function formatDateTimeLocal(d){
+    return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate()) +
+           "T" + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
+  function formatHuman(d){
+    return pad2(d.getDate()) + "." + pad2(d.getMonth()+1) + "." + d.getFullYear() + " " +
+           pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
+  function convertUTCDateToLocalDate(date){
+    var offsetMs = date.getTimezoneOffset() * 60 * 1000;
+    return new Date(date.getTime() - offsetMs);
+  }
+
+  function setMessage(text, isError){
+    $('#message').toggleClass('is-error', !!isError).text(text || "");
+  }
+
+  function ajaxJson(url, method, data){
+    return $.ajax({
+      url: url,
+      type: method,
+      headers: requestHeaders,
+      contentType: "application/json; charset=utf-8",
+      dataType: "json",
+      processData: false,
+      data: data ? JSON.stringify(data) : null
+    });
+  }
+
+  function shortHost(host){
+    return host ? host.split(".")[0] : "";
+  }
+
+  // Friendly name mapping (extend as needed)
+    var hostToFriendly = {
+      // Optional demo mapping:
+      // "server01.demo.local":"Application Server 01",
+      // "server02.demo.local":"Database Server 01"
+    };
+  function getFriendly(host){
+    return (host && hostToFriendly[host]) ? hostToFriendly[host] : "";
+  }
+
+  function extractGroupScope(resp){
+    if (!resp) return [];
+    if (Array.isArray(resp)) return resp;
+    if (Array.isArray(resp.scopeDatas)) return resp.scopeDatas;
+    if (Array.isArray(resp.scopeData)) return resp.scopeData;
+    if (Array.isArray(resp.rows)) return resp.rows;
+    if (Array.isArray(resp.value)) return resp.value;
+    return [];
+  }
+
+  function buildGroupCriteria(){
+    return "DisplayName LIKE '%'";
+  }
+
+  function populateGroupSelect(scope){
+    var groups = extractGroupScope(scope).filter(function(x){ return x && x.id; });
+    groups.sort(function(a,b){
+      var ad = ((a.displayName || a.fullName || a.name || a.id) || "").toLowerCase();
+      var bd = ((b.displayName || b.fullName || b.name || b.id) || "").toLowerCase();
+      return ad < bd ? -1 : (ad > bd ? 1 : 0);
+    });
+
+    var $group = $('#groupSelect').empty();
+    $group.append($('<option>', { value:"", text:"-- Select a group --" }));
+
+    groups.forEach(function(g){
+      var label = g.displayName || g.fullName || g.name || g.id;
+      $group.append($('<option>', { value:g.id, text:label }));
+    });
+
+    $('#groupSelect').prop('disabled', false);
+    return groups;
+  }
+
+  function loadGroups(){
+    var criteria = buildGroupCriteria();
+    $('#groupSelect').prop('disabled', true).empty().append($('<option>', { value:"", text:"Loading groups..." }));
+    $('#reloadGroupsBtn').prop('disabled', true);
+    $('#refreshBtn').prop('disabled', true);
+    setMessage("Loading groups...", false);
+
+    function tryArray(c){ return ajaxJson("/OperationsManager/data/scomGroups", "POST", [c]); }
+    function tryString(c){
+      return $.ajax({
+        url: "/OperationsManager/data/scomGroups",
+        type:"POST",
+        headers: requestHeaders,
+        contentType:"application/json; charset=utf-8",
+        dataType:"json",
+        data: JSON.stringify(c)
+      });
+    }
+    function tryForm(c){
+      return $.ajax({
+        url: "/OperationsManager/data/scomGroups",
+        type:"POST",
+        headers: requestHeaders,
+        contentType:"application/x-www-form-urlencoded; charset=UTF-8",
+        dataType:"json",
+        data: { criteria:c }
+      });
+    }
+
+    return tryArray(criteria)
+      .catch(function(){ return tryString(criteria); })
+      .catch(function(){ return tryForm(criteria); })
+      .done(function(resp){
+        var groups = populateGroupSelect(resp);
+        $('#reloadGroupsBtn').prop('disabled', false);
+        $('#refreshBtn').prop('disabled', false).text('Refresh');
+
+        if (groups.length){
+          $('#groupSelect').val(groups[0].id);
+          loadAll();
+        } else {
+          setMessage("No groups returned from SCOM.", true);
+          $('#dashboard').html('<p>No groups returned from SCOM.</p>');
+        }
+      })
+      .fail(function(xhr){
+        $('#groupSelect')
+          .prop('disabled', false)
+          .empty()
+          .append($('<option>', { value:"", text:"Failed to load groups (HTTP " + xhr.status + ")" }));
+        $('#reloadGroupsBtn').prop('disabled', false);
+        $('#refreshBtn').prop('disabled', false).text('Refresh');
+        setMessage("Failed to load groups.", true);
+        $('#dashboard').html('<p style="color:red;">Failed to load groups.</p>');
+      });
+  }
+
+  function decimatePoints(points, maxPoints){
+    if (!points || points.length <= maxPoints) return points || [];
+    var step = Math.ceil(points.length / maxPoints);
+    var out = [];
+    for (var i=0; i<points.length; i+=step) out.push(points[i]);
+    if (out.length && out[out.length-1].x !== points[points.length-1].x) out.push(points[points.length-1]);
+    return out;
+  }
+
+  function axisTickSpec(startDate, endDate){
+    var ms = Math.max(0, endDate - startDate);
+    var hours = ms / 36e5;
+    if (hours <= 6)   return { intervalType:"minute", interval:15 };
+    if (hours <= 12)  return { intervalType:"minute", interval:30 };
+    if (hours <= 24)  return { intervalType:"hour",   interval:1  };
+    if (hours <= 72)  return { intervalType:"hour",   interval:2  };
+    if (hours <= 168) return { intervalType:"hour",   interval:4  };
+    if (hours <= 336) return { intervalType:"hour",   interval:6  };
+    return            { intervalType:"day",           interval:1  };
+  }
+
+  function classify(metricKey, value){
+    if (value == null || isNaN(value)) return "";
+    if (metricKey === "cpu" || metricKey === "ram"){
+      if (value >= 85) return "bad";
+      if (value >= 70) return "warn";
+      return "ok";
+    }
+    if (metricKey === "c" || metricKey === "d"){
+      if (value <= 15) return "bad";
+      if (value <= 25) return "warn";
+      return "ok";
+    }
+    return "";
+  }
+
+  function getMetricPalette(metricKey){
+    if (metricKey === "cpu"){
+      return { stroke:"#d97706", fill:"rgba(217,119,6,0.18)", marker:"#b45309" };
+    }
+    if (metricKey === "ram"){
+      return { stroke:"#0f766e", fill:"rgba(15,118,110,0.18)", marker:"#115e59" };
+    }
+    if (metricKey === "c"){
+      return { stroke:"#15803d", fill:"rgba(21,128,61,0.18)", marker:"#166534" };
+    }
+    if (metricKey === "d"){
+      return { stroke:"#7c3aed", fill:"rgba(124,58,237,0.16)", marker:"#6d28d9" };
+    }
+    return { stroke:"#2563eb", fill:"rgba(37,99,235,0.16)", marker:"#1d4ed8" };
+  }
+
+  // Robust getter for "instance" from various possible property names
+  function getInstanceFrom(leg, ds){
+    var v =
+      (leg && (leg.instance ?? leg.instancename ?? leg.instanceName ?? leg.Instance ?? leg.InstanceName ?? leg.Instancename)) ??
+      (ds  && (ds.instance  ?? ds.instancename ?? ds.instanceName)) ??
+      "";
+    return (v == null) ? "" : String(v);
+  }
+
+  // =========================
+  // 2) Date/Days UI
+  // =========================
+  function initDays(){
+    var $days = $('#daysSelect').empty();
+    for (var d=1; d<=90; d++){
+      $days.append($('<option>',{value:d, text:d+" day"+(d>1?"s":"")}));
+    }
+    $days.val(3);
+  }
+
+  function initDates(){
+    var now = new Date();
+    var start = new Date(now.getTime() - 3*24*60*60*1000);
+    $('#startDateTimeSelect').val(formatDateTimeLocal(start));
+    $('#endDateTimeSelect').val(formatDateTimeLocal(now));
+  }
+
+  function syncDatesFromDays(){
+    var days = parseInt($('#daysSelect').val(),10);
+    if (isNaN(days) || days<1) return;
+
+    var endStr = $('#endDateTimeSelect').val();
+    var end = endStr ? new Date(endStr) : new Date();
+    if (isNaN(end.getTime())) end = new Date();
+
+    var start = new Date(end.getTime() - days*24*60*60*1000);
+    $('#startDateTimeSelect').val(formatDateTimeLocal(start));
+  }
+
+  function syncDaysFromDates(){
+    var startStr = $('#startDateTimeSelect').val();
+    var endStr   = $('#endDateTimeSelect').val();
+    if (!startStr || !endStr) return;
+
+    var start = new Date(startStr);
+    var end   = new Date(endStr);
+    var diffDays = Math.round((end - start) / (24*60*60*1000));
+    if (diffDays >= 1 && diffDays <= 90) $('#daysSelect').val(diffDays);
+  }
+
+  function updateSummary(startDate, endDate){
+    var groupText = $('#groupSelect option:selected').text() || $('#groupSelect').val();
+    var sortText  = $('#sortSelect option:selected').text() || "";
+    var filter    = ($('#filterText').val() || "").trim();
+
+    var parts = [];
+    parts.push("Group: " + groupText);
+    if (startDate && endDate) parts.push("Range: " + formatHuman(startDate) + " - " + formatHuman(endDate));
+    if (sortText) parts.push("Sort: " + sortText);
+    if (filter) parts.push("Filter: " + filter);
+
+    $('#summary').text(parts.join(" | "));
+  }
+
+  // =========================
+  // 3) Load
+  // =========================
+  var loadTimer = null;
+  function scheduleLoad(){
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(loadAll, 350);
+  }
+
+  function normalizeDates(){
+    var now = new Date();
+
+    var startStr = $('#startDateTimeSelect').val();
+    var endStr   = $('#endDateTimeSelect').val();
+
+    if (!startStr){
+      var fallback = new Date(now.getTime() - 3*24*60*60*1000);
+      startStr = formatDateTimeLocal(fallback);
+      $('#startDateTimeSelect').val(startStr);
+    }
+    if (!endStr){
+      endStr = formatDateTimeLocal(now);
+      $('#endDateTimeSelect').val(endStr);
+    }
+
+    var start = new Date(startStr);
+    var end   = new Date(endStr);
+
+    if (isNaN(start.getTime())) start = new Date(now.getTime() - 3*24*60*60*1000);
+    if (isNaN(end.getTime()))   end   = now;
+
+    if (end > now) end = now;
+    if (end < start){ var t = start; start = end; end = t; }
+
+    return { start:start, end:end, now:now };
+  }
+
+  function loadAll(){
+    $('#refreshBtn').prop('disabled', true).text('Loading…');
+    setMessage("Loading performance data…", false);
+
+    var groupId = $('#groupSelect').val();
+    if (!groupId){
+      $('#refreshBtn').prop('disabled', false).text('Refresh');
+      setMessage("Please select a group.", true);
+      $('#dashboard').html('<p>Please select a group.</p>');
+      return;
+    }
+    var dt = normalizeDates();
+    syncDaysFromDates();
+    updateSummary(dt.start, dt.end);
+
+    var durationMin = Math.max(5, Math.round((dt.now - dt.start) / 60000));
+
+    var counters = [
+      {objectname:"Processor Information", countername:"% Processor Time",   instancename:"_Total"},
+      {objectname:"Memory",                countername:"PercentMemoryUsed",  instancename:""},
+      {objectname:"LogicalDisk",           countername:"% Free Space",       instancename:"%"}
+    ];
+
+    var payload = {
+      id: groupId,
+      performanceCounters: counters,
+      legends:["target","path","instance","lastvalue","objectname","countername"],
+      duration: durationMin
+    };
+
+    $.ajax({
+      url: "/OperationsManager/data/performance",
+      type: "POST",
+      headers: requestHeaders,
+      contentType: "application/json",
+      data: JSON.stringify(payload),
+      dataType: "json"
+    }).done(function(res){
+      renderDashboard(res, dt.start, dt.end);
+    }).fail(function(xhr){
+      console.error("SCOM API error:", xhr);
+      $('#dashboard').empty().append($('<div>').css('color', 'red').text("Failed to load data."));
+      setMessage("Failed to load data. HTTP " + xhr.status, true);
+    }).always(function(){
+      $('#refreshBtn').prop('disabled', false).text('Refresh');
+    });
+  }
+
+  // =========================
+  // 4) Parse + render
+  // =========================
+  function findLegend(ds, legends){
+    if (!legends) return null;
+    for (var i=0;i<legends.length;i++){
+      if (legends[i].id === ds.id) return legends[i];
+    }
+    return null;
+  }
+
+  function extractPoints(ds, startDate, endDate){
+    var pts = [];
+    var data = ds.data || {};
+    for (var ts in data){
+      if (!data.hasOwnProperty(ts)) continue;
+      var utc = new Date(ts);
+      if (isNaN(utc.getTime())) continue;
+
+      if (utc < startDate) continue;
+      if (utc > endDate) continue;
+
+      var local = convertUTCDateToLocalDate(utc);
+      var v = Number(data[ts]);
+      if (isNaN(v)) continue;
+      pts.push({ x: local, y: v });
+    }
+    pts.sort(function(a,b){ return a.x - b.x; });
+    return pts;
+  }
+
+  // FIX: Disk mapping now works even if instance comes back under different property
+  // or if the instance is not returned at all.
+  function decideType(leg, ds, srv){
+    // 1) Use instance signals if available
+    var instRaw = getInstanceFrom(leg, ds);
+    var inst = instRaw.toUpperCase().replace(/\s+/g, "");
+
+    // Some environments include instance in target/path text as well (belt & suspenders)
+    var hint = ((leg && (leg.target || "")) + " " + (leg && (leg.path || "")) + " " + instRaw).toUpperCase();
+
+    if (inst.indexOf("C:") !== -1 || hint.indexOf("C:") !== -1) return "c";
+    if (inst.indexOf("D:") !== -1 || hint.indexOf("D:") !== -1) return "d";
+
+    // 2) Use object/counter if present
+    var cntName = (leg.countername || leg.counterName || leg.counter || "").toLowerCase();
+    var objName = (leg.objectname  || leg.objectName  || leg.object  || "").toLowerCase();
+
+    if (cntName.indexOf("% processor time") !== -1 || objName.indexOf("processor") !== -1) return "cpu";
+    if (cntName.indexOf("percentmemoryused") !== -1 || objName.indexOf("memory") !== -1) return "ram";
+    if (cntName.indexOf("% free space") !== -1 || objName.indexOf("logicaldisk") !== -1){
+      // disk but unknown letter -> fall through to "fill-next"
+    }
+
+    // 3) Fallback: fill next missing slot per server (keeps CPU/RAM first, then C, then D)
+    if (srv.cpu === null) return "cpu";
+    if (srv.ram === null) return "ram";
+    if (srv.c   === null) return "c";
+    if (srv.d   === null) return "d";
+    return null;
+  }
+
+  function renderDashboard(res, startDate, endDate){
+    var $dash = $('#dashboard').empty();
+
+    if (!res || !res.legends || !Array.isArray(res.legends.rows)){
+      $dash.append($('<div>').text("No legends returned."));
+      setMessage("Ready, but no legends returned.", true);
+      return;
+    }
+
+    var legends = res.legends.rows;
+    var servers = {}; // key: lower(host)
+
+    function ensureServer(host){
+      var key = (host || "").toLowerCase();
+      if (!key) return null;
+      if (!servers[key]){
+        servers[key] = {
+          host: host,
+          cpu:null, ram:null, c:null, d:null,
+          cpuPts:[], ramPts:[], cPts:[], dPts:[]
+        };
+      }
+      return servers[key];
+    }
+
+    var datasets = Array.isArray(res.datasets) ? res.datasets : [];
+    var classified = 0;
+
+    datasets.forEach(function(ds){
+      var leg = findLegend(ds, legends);
+      if (!leg) return;
+
+      var host = (leg.path || leg.target || "");
+      if (!host) return;
+
+      var srv = ensureServer(host);
+      if (!srv) return;
+
+      var type = decideType(leg, ds, srv);
+      if (!type) return;
+
+      var pts = decimatePoints(extractPoints(ds, startDate, endDate), 160);
+      var last = pts.length ? pts[pts.length-1].y : null;
+
+      if (type === "cpu"){ srv.cpu = last; srv.cpuPts = pts; classified++; }
+      else if (type === "ram"){ srv.ram = last; srv.ramPts = pts; classified++; }
+      else if (type === "c"){ srv.c = last; srv.cPts = pts; classified++; }
+      else if (type === "d"){ srv.d = last; srv.dPts = pts; classified++; }
+    });
+
+    var keys = Object.keys(servers);
+    if (!keys.length){
+      $dash.append($('<div>').text("No measurements found for this window."));
+      setMessage("Ready, but no servers were parsed (datasets: " + datasets.length + ").", true);
+      return;
+    }
+
+    // Filter
+    var f = ($('#filterText').val() || "").trim().toLowerCase();
+    if (f){
+      keys = keys.filter(function(k){
+        var host = servers[k].host || "";
+        var fr = getFriendly(host) || "";
+        var s = (shortHost(host) + " " + host + " " + fr).toLowerCase();
+        return s.indexOf(f) !== -1;
+      });
+    }
+
+    // Sort
+    var sortMode = $('#sortSelect').val() || "name";
+    function valOrNegInf(v){ return (v==null || isNaN(v)) ? -Infinity : v; }
+    function valOrPosInf(v){ return (v==null || isNaN(v)) ? +Infinity : v; }
+
+    keys.sort(function(a,b){
+      var A = servers[a], B = servers[b];
+      if (sortMode === "cpu_desc") return valOrNegInf(B.cpu) - valOrNegInf(A.cpu);
+      if (sortMode === "ram_desc") return valOrNegInf(B.ram) - valOrNegInf(A.ram);
+      if (sortMode === "c_asc")    return valOrPosInf(A.c) - valOrPosInf(B.c);
+      if (sortMode === "d_asc")    return valOrPosInf(A.d) - valOrPosInf(B.d);
+      return (A.host || "").localeCompare(B.host || "", undefined, {sensitivity:'base'});
+    });
+
+    // Render
+    var pending = {};
+    var axisSpec = axisTickSpec(startDate, endDate);
+
+    keys.forEach(function(k, idx){
+      var srv = servers[k];
+      var host = srv.host || "";
+      var friendly = getFriendly(host);
+      var hostShort = shortHost(host);
+
+      var $row = $('<div class="server-row">');
+
+      var $srv = $('<div class="srv">');
+      $srv.append($('<div class="host">').text(hostShort));
+      $srv.append($('<div class="friendly">').text(friendly || host));
+      $row.append($srv);
+
+      $row.append(makeMetric("CPU %", "cpu", srv.cpu, srv.cpuPts, "sp_"+idx+"_cpu", "%"));
+      $row.append(makeMetric("RAM %", "ram", srv.ram, srv.ramPts, "sp_"+idx+"_ram", "%"));
+      $row.append(makeMetric("C: % Free", "c", srv.c, srv.cPts, "sp_"+idx+"_c", "%"));
+      $row.append(makeMetric("D: % Free", "d", srv.d, srv.dPts, "sp_"+idx+"_d", "%"));
+
+      $dash.append($row);
+    });
+
+    $('.spark').each(function(){
+      var id = this.id;
+      var payload = $(this).data('payload');
+      if (!payload) return;
+      pending[id] = {
+        metricKey: payload.metricKey || "",
+        points: payload.points || [],
+        suffix: payload.suffix || "",
+        start: startDate,
+        end: endDate,
+        axisSpec: axisSpec
+      };
+    });
+
+    setMessage("Ready. Servers: " + keys.length + " | Datasets: " + datasets.length + " | Classified: " + classified, false);
+
+    setupLazyRender(pending);
+  }
+
+  function makeMetric(label, key, value, points, chartId, suffix){
+    var $m = $('<div class="metric">').addClass(key);
+
+    var vText = (value == null || isNaN(value)) ? "-" : Math.round(value).toString();
+    var cls = classify(key, value);
+
+    var $top = $('<div class="top">');
+    $top.append($('<div class="label">').text(label));
+    $top.append($('<div class="value">').addClass(cls).text(vText));
+    $m.append($top);
+
+    var $spark = $('<div class="spark">').attr('id', chartId);
+    $spark.data('payload', { metricKey:key, points: points || [], suffix: suffix || "" });
+    $m.append($spark);
+
+    return $m;
+  }
+
+  var io = null;
+  function setupLazyRender(pending){
+    if (!('IntersectionObserver' in window)){
+      Object.keys(pending).forEach(function(id){
+        var job = pending[id];
+        renderSparkline(id, job.metricKey, job.points, job.suffix, job.start, job.end, job.axisSpec);
+      });
+      return;
+    }
+
+    if (io) io.disconnect();
+
+    io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (!e.isIntersecting) return;
+        var el = e.target;
+        var id = el.id;
+        var job = pending[id];
+        if (!job) return;
+
+        renderSparkline(id, job.metricKey, job.points, job.suffix, job.start, job.end, job.axisSpec);
+        delete pending[id];
+        io.unobserve(el);
+      });
+    }, { root: document.getElementById('scrollArea'), rootMargin: "120px", threshold: 0.05 });
+
+    Object.keys(pending).forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) io.observe(el);
+    });
+  }
+
+  function renderSparkline(containerId, metricKey, points, suffix, startDate, endDate, axisSpec){
+    if (!points || !points.length) return;
+
+    var fontFamily = "Segoe UI, Arial, Helvetica, sans-serif";
+    var palette = getMetricPalette(metricKey);
+    var lastPoint = points[points.length - 1];
+
+    var chart = new CanvasJS.Chart(containerId, {
+      animationEnabled: false,
+      theme: "light2",
+      backgroundColor: "transparent",
+      height: 92,
+
+      axisX: {
+        minimum: startDate,
+        maximum: endDate,
+        intervalType: axisSpec.intervalType,
+        interval: axisSpec.interval,
+
+        lineThickness: 0,
+        tickLength: 0,
+        labelFontSize: 0,
+
+        gridThickness: 1,
+        gridColor: "rgba(0,0,0,0.08)",
+        gridDashType: "dash",
+
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+      axisY: {
+        minimum: 0,
+        maximum: 100,
+
+        lineThickness: 0,
+        tickLength: 0,
+        labelFontSize: 0,
+
+        gridThickness: 1,
+        gridColor: "rgba(0,0,0,0.08)",
+        gridDashType: "dash",
+
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+
+      toolTip: {
+        fontFamily: fontFamily,
+        fontSize: 12,
+        content: "<b>{x:DD.MM.YYYY HH:mm}</b><br/>{y}" + (suffix ? " " + suffix : "")
+      },
+
+      data: [{
+        type: "splineArea",
+        markerSize: 0,
+        lineThickness: 3,
+        lineColor: palette.stroke,
+        color: palette.fill,
+        dataPoints: points
+      },{
+        type: "scatter",
+        markerType: "circle",
+        markerSize: 5,
+        markerColor: palette.marker,
+        toolTipContent: null,
+        dataPoints: [lastPoint]
+      }]
+    });
+
+    chart.render();
+  }
+
+  // =========================
+  // 5) UI events + startup
+  // =========================
+  function wireUI(){
+    initDays();
+    initDates();
+
+    $('#toggleFiltersBtn').on('click', function(){
+      var $f = $('#filters');
+      var collapsed = $f.hasClass('is-collapsed');
+      if (collapsed){
+        $f.removeClass('is-collapsed');
+        $(this).text("Hide filters");
+      } else {
+        $f.addClass('is-collapsed');
+        $(this).text("Show filters");
+      }
+    });
+
+    $('#refreshBtn').on('click', loadAll);
+    $('#reloadGroupsBtn').on('click', loadGroups);
+
+    $('#groupSelect').on('change', scheduleLoad);
+    $('#daysSelect').on('change', function(){ syncDatesFromDays(); scheduleLoad(); });
+    $('#startDateTimeSelect, #endDateTimeSelect').on('change', function(){ syncDaysFromDates(); scheduleLoad(); });
+    $('#sortSelect').on('change', scheduleLoad);
+    $('#filterText').on('input', scheduleLoad);
+  }
+
+  $(function(){
+    wireUI();
+    var dt = normalizeDates();
+    updateSummary(dt.start, dt.end);
+    loadGroups();
+  });
+
+})();
+</script>
+</body>
+</html>

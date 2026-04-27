@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Operations Pulse Overview</title>
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/highcharts.js"></script>
+    <script src="/dashboardlibs/modules/exporting.js"></script>
+    <style>
+        :root { --ui-font:"Segoe UI",Arial,sans-serif; --bg:#f8fafc; --panel:#fff; --border:#dbe3ee; --text:#0f172a; --muted:#64748b; --primary:#2563eb; --primary-dark:#1d4ed8; --critical:#dc2626; --warning:#f59e0b; --healthy:#16a34a; --info:#0284c7; --unmonitored:#6b7280; }
+        body { margin:0; padding:10px; background:var(--bg); color:var(--text); font-family:var(--ui-font); }
+        .widget-shell { position:relative; min-height:720px; }
+        .controls { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px; background:var(--panel); border:1px solid var(--border); border-radius:14px; box-shadow:0 10px 24px rgba(15,23,42,.06); flex-wrap:wrap; }
+        .controls-left { display:flex; flex-direction:column; gap:4px; min-width:260px; }
+        .controls-left .title { font-size:20px; font-weight:700; line-height:1.2; }
+        .controls-left .summary { font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:760px; }
+        button { height:34px; font-size:13px; font-family:var(--ui-font); border-radius:10px; border:1px solid var(--primary); background:var(--primary); color:#fff; padding:0 12px; box-sizing:border-box; cursor:pointer; box-shadow:0 1px 2px rgba(15,23,42,.04); font-weight:600; }
+        button:hover { background:var(--primary-dark); }
+        #message { margin-bottom:10px; padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:12px; color:var(--muted); font-size:13px; }
+        #message.is-error { color:#b00020; border-color:#f0c2c2; }
+        .cards-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:12px; }
+        .kpi-card,.panel { background:linear-gradient(180deg,#fff 0%,#f8fbff 100%); border:1px solid var(--border); border-radius:16px; box-shadow:0 12px 28px rgba(15,23,42,.06); }
+        .kpi-card { padding:14px 16px; }
+        .kpi-label { color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+        .kpi-value { font-size:28px; font-weight:800; line-height:1; margin-bottom:8px; }
+        .kpi-sub { color:var(--muted); font-size:13px; }
+        .healthy{color:var(--healthy);} .critical{color:var(--critical);} .warning{color:var(--warning);}
+        .content-grid { display:grid; grid-template-columns:1.05fr .95fr; gap:12px; margin-bottom:12px; }
+        .panel-head { padding:14px 16px 6px; font-size:16px; font-weight:700; }
+        .panel-sub { padding:0 16px 12px; color:var(--muted); font-size:13px; }
+        .chart { height:300px; }
+        .recent-list { padding:0 16px 16px; display:flex; flex-direction:column; gap:10px; }
+        .recent-item { border:1px solid #e6edf6; border-left-width:4px; border-radius:12px; background:#fbfdff; padding:10px 12px; }
+        .recent-item.critical { border-left-color:var(--critical); }
+        .recent-item.warning { border-left-color:var(--warning); }
+        .recent-item.info { border-left-color:var(--info); }
+        .recent-title { font-size:14px; font-weight:700; margin-bottom:4px; }
+        .recent-meta { color:var(--muted); font-size:12px; line-height:1.45; }
+        .brand-badge { position:fixed; right:30px; bottom:26px; z-index:1; padding:10px 12px; border-radius:14px; background:rgba(255,255,255,.96); border:1px solid rgba(203,213,225,.9); box-shadow:0 14px 28px rgba(15,23,42,.14); pointer-events:none; user-select:none; }
+        .brand-watermark { display:block; width:min(180px,16vw); max-width:200px; opacity:1; filter:saturate(1.08) contrast(1.04); }
+        @media (max-width:1200px){ .cards-grid{grid-template-columns:repeat(2,minmax(0,1fr));} .content-grid{grid-template-columns:1fr;} }
+        @media (max-width:900px){ .cards-grid{grid-template-columns:1fr;} .brand-badge{right:18px; bottom:18px; padding:8px 10px; border-radius:12px;} .brand-watermark{width:min(140px,34vw);} }
+    </style>
+</head>
+<body>
+<div class="widget-shell">
+    <div class="controls">
+        <div class="controls-left">
+            <div class="title">Operations Pulse Overview</div>
+            <div id="summary" class="summary">Initializing...</div>
+        </div>
+        <button id="refreshBtn" type="button">Refresh</button>
+    </div>
+    <div id="message">Ready.</div>
+    <div class="cards-grid">
+        <div class="kpi-card"><div class="kpi-label">Computers In Scope</div><div id="kpiComputers" class="kpi-value">-</div><div class="kpi-sub">Windows computers in the selected demo group</div></div>
+        <div class="kpi-card"><div class="kpi-label">Healthy Systems</div><div id="kpiHealthy" class="kpi-value healthy">-</div><div id="kpiHealthySub" class="kpi-sub">Current healthy share</div></div>
+        <div class="kpi-card"><div class="kpi-label">Open Alerts</div><div id="kpiAlerts" class="kpi-value critical">-</div><div id="kpiAlertsSub" class="kpi-sub">Warnings, criticals and information alerts</div></div>
+        <div class="kpi-card"><div class="kpi-label">Oldest Open Alert</div><div id="kpiOldest" class="kpi-value warning">-</div><div class="kpi-sub">Operational staleness at a glance</div></div>
+    </div>
+    <div class="content-grid">
+        <div class="panel">
+            <div class="panel-head">Current Health Mix</div>
+            <div class="panel-sub">A compact view of the current health distribution of the Windows computers in scope.</div>
+            <div id="healthChart" class="chart"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-head">Open Alert Age</div>
+            <div class="panel-sub">How old the current alert backlog is, grouped into useful age buckets.</div>
+            <div id="ageChart" class="chart"></div>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="panel-head">Most Recent Alerts</div>
+        <div class="panel-sub">Latest alerts in the current group, useful for a quick operator briefing.</div>
+        <div id="recentList" class="recent-list"></div>
+    </div>
+</div>
+<div class="brand-badge"><img class="brand-watermark" src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo"></div>
+<script>
+(function(){
+  var GROUP_ID="9c95accb-2417-b6d9-dd03-b39e896fccab";
+  var GROUP_NAME="Demo Windows Computers";
+  var requestHeaders={Accept:"q=0.8;application/json;q=0.9","Content-Type":"application/json"};
+  (function(){var m=document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/); if(m) requestHeaders["SCOM-CSRF-TOKEN"]=decodeURIComponent(m[1]);})();
+  function setMessage(text,isError){ $("#message").toggleClass("is-error",!!isError).text(text||""); }
+  function ajaxJson(url,data){ return $.ajax({url:url,type:"POST",headers:requestHeaders,contentType:"application/json; charset=utf-8",dataType:"json",processData:false,data:JSON.stringify(data)}); }
+  function pad2(v){ return (v<10?"0":"")+v; }
+  function formatHuman(d){ return pad2(d.getDate())+"."+pad2(d.getMonth()+1)+"."+d.getFullYear()+" "+pad2(d.getHours())+":"+pad2(d.getMinutes()); }
+  function parseScomDate(value){ if(!value) return null; if(typeof value==="string"){ var m=value.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//); if(m){ var ms=parseInt(m[1],10); if(!isNaN(ms)) return new Date(ms); } } var d=new Date(value); return isNaN(d.getTime())?null:d; }
+  function normalizeSeverity(sev){ var s=String(sev==null?"":sev).trim().toLowerCase(); if(s==="2"||s==="error"||s==="critical") return "critical"; if(s==="1"||s==="warning") return "warning"; if(s==="0"||s==="information"||s==="info") return "info"; return "warning"; }
+  function normalizeHealthState(v){ if(v==null||v==="") return "unmonitored"; var s=String(v).trim().toLowerCase(); if(s==="3"||s==="critical"||s==="error") return "critical"; if(s==="2"||s==="warning") return "warning"; if(s==="1"||s==="healthy"||s==="success") return "healthy"; return "unmonitored"; }
+  function getAlertDate(alert){ var f=["timegenerated","timeGenerated","timeraised","timeRaised","timeadded","timeAdded","timecreated","timeCreated","lastModified","lastmodified"]; for(var i=0;i<f.length;i++){ var raw=alert[f[i]]; if(raw!=null&&raw!==""){ var p=parseScomDate(raw); if(p) return p; } } return null; }
+  function formatAge(ms){ if(ms==null||isNaN(ms)||ms<0) return "-"; var min=Math.floor(ms/60000), hr=Math.floor(min/60), day=Math.floor(hr/24); if(day>0) return day+"d "+(hr%24)+"h"; if(hr>0) return hr+"h "+(min%60)+"m"; return min+"m"; }
+  function escapeHtml(str){ return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+  function capitalize(s){ return s?s.charAt(0).toUpperCase()+s.slice(1):""; }
+  function renderHealthChart(c){ Highcharts.chart("healthChart",{chart:{type:"pie",backgroundColor:"#ffffff"},title:{text:null},tooltip:{pointFormat:"<b>{point.y}</b> computer(s) ({point.percentage:.1f}%)"},plotOptions:{pie:{innerSize:"70%",startAngle:-90,endAngle:90,center:["50%","78%"],dataLabels:{enabled:true,format:"{point.name}: {point.y}"}}},series:[{name:"Health",data:[{name:"Critical",y:c.critical,color:"#dc2626"},{name:"Healthy",y:c.healthy,color:"#16a34a"},{name:"Warning",y:c.warning,color:"#f59e0b"},{name:"Unmonitored",y:c.unmonitored,color:"#6b7280"}]}],exporting:{enabled:true},credits:{enabled:true}}); }
+  function renderAgeChart(b){ Highcharts.chart("ageChart",{chart:{type:"column",backgroundColor:"#ffffff"},title:{text:null},xAxis:{categories:["<1h","1-4h","4-24h","1-7d",">7d"]},yAxis:{min:0,allowDecimals:false,title:{text:"Open alerts"}},tooltip:{pointFormat:"<b>{point.y}</b> alert(s)"},plotOptions:{column:{borderRadius:5,dataLabels:{enabled:true,format:"{point.y}"}}},series:[{name:"Alerts",data:[{y:b[0],color:"#38bdf8"},{y:b[1],color:"#22c55e"},{y:b[2],color:"#f59e0b"},{y:b[3],color:"#fb7185"},{y:b[4],color:"#7c3aed"}]}],legend:{enabled:false},exporting:{enabled:true},credits:{enabled:true}}); }
+  function renderRecentAlerts(alerts){ var $list=$("#recentList").empty(); if(!alerts.length){ $list.html("<div class='recent-meta'>No open alerts found in the current group.</div>"); return; } alerts.forEach(function(alert){ var sev=normalizeSeverity(alert.severity), date=getAlertDate(alert), age=date?formatAge(Date.now()-date.getTime()):"-", title=alert.name||"Unnamed alert", source=alert.monitoringobjectdisplayname||alert.path||"Unknown object", timeText=date?formatHuman(date):"-"; $list.append("<div class='recent-item "+sev+"'><div class='recent-title'>"+escapeHtml(title)+"</div><div class='recent-meta'>Object: "+escapeHtml(source)+"<br>Severity: "+capitalize(sev)+" | Time: "+escapeHtml(timeText)+" | Age: "+escapeHtml(age)+"</div></div>"); }); }
+  function loadData(){
+    $("#refreshBtn").prop("disabled",true).text("Loading...");
+    setMessage("Loading operations pulse...",false);
+    $.when(
+      ajaxJson("/OperationsManager/data/state",{classId:"System.Library!System.Computer",objectIds:{ [GROUP_ID]:-1 },criteria:"((HealthState = '0') OR (HealthState = '1') OR (HealthState = '2') OR (HealthState = '3') OR HealthState is null)",displayColumns:["healthstate","displayname","path","maintenancemode"]}),
+      ajaxJson("/OperationsManager/data/alert",{classId:null,objectIds:{ [GROUP_ID]:-1 },criteria:"((Severity = '0') OR (Severity = '1') OR (Severity = '2')) AND ((ResolutionState = '0') OR (ResolutionState = '247') OR (ResolutionState = '248') OR (ResolutionState = '249') OR (ResolutionState = '250') OR (ResolutionState = '254') OR (ResolutionState = '255'))",displayColumns:["severity","monitoringobjectdisplayname","name","age","repeatcount","lastModified","timegenerated","timeGenerated","timeraised","timeRaised","timeadded","timeAdded","timecreated","timeCreated"]})
+    ).done(function(stateResp,alertResp){
+      var stateRows=(stateResp[0]&&stateResp[0].rows)||[], alertRows=(alertResp[0]&&alertResp[0].rows)||[];
+      var counts={critical:0,healthy:0,warning:0,unmonitored:0}; stateRows.forEach(function(r){ var s=normalizeHealthState(r.healthstate); counts[s]=(counts[s]||0)+1; });
+      var now=Date.now(), oldestAge=0, buckets=[0,0,0,0,0];
+      alertRows.forEach(function(r){ var d=getAlertDate(r); if(!d) return; var ageMs=now-d.getTime(); if(ageMs>oldestAge) oldestAge=ageMs; var h=ageMs/3600000; if(h<1) buckets[0]++; else if(h<4) buckets[1]++; else if(h<24) buckets[2]++; else if(h<168) buckets[3]++; else buckets[4]++; });
+      var recent=alertRows.slice().sort(function(a,b){ var da=getAlertDate(a), db=getAlertDate(b); return (db?db.getTime():0)-(da?da.getTime():0); }).slice(0,5);
+      $("#kpiComputers").text(stateRows.length);
+      $("#kpiHealthy").text(counts.healthy);
+      $("#kpiHealthySub").text(stateRows.length?Math.round((counts.healthy/stateRows.length)*100)+"% healthy right now":"No computers returned");
+      $("#kpiAlerts").text(alertRows.length);
+      $("#kpiAlertsSub").text(alertRows.length?"Open alerts currently in scope":"No open alerts in scope");
+      $("#kpiOldest").text(alertRows.length?formatAge(oldestAge):"-");
+      $("#summary").text("Group: "+GROUP_NAME+" | Last refresh: "+formatHuman(new Date())+" | Computers: "+stateRows.length+" | Alerts: "+alertRows.length);
+      renderHealthChart(counts); renderAgeChart(buckets); renderRecentAlerts(recent);
+      setMessage("Operations pulse loaded successfully.",false);
+    }).fail(function(xhr){ console.error(xhr); setMessage("Failed to load operations pulse data.",true); $("#recentList").html("<div class='recent-meta'>Failed to load data.</div>"); })
+      .always(function(){ $("#refreshBtn").prop("disabled",false).text("Refresh"); });
+  }
+  $(function(){ $("#refreshBtn").on("click",loadData); loadData(); });
+})();
+</script>
+</body>
+</html>

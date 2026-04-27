@@ -1,0 +1,1170 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Perf Widget Optimized V5</title>
+
+<!-- jQuery & CanvasJS (local environment) -->
+<script src="/dashboardlibs/jquery.js"></script>
+<script src="/dashboardlibs/canvasjs.min.js"></script>
+
+  <style>
+    :root{
+      --ui-font: "Segoe UI Variable", "Segoe UI", Arial, Helvetica, sans-serif;
+      --ui-font-size: 12px;
+      --border: #ddd;
+      --bg: #f5f5f5;
+      --panel: #fff;
+      --muted: #666;
+      --error: #b00020;
+    }
+
+    html, body { height: 100%; }
+    body{
+      font-family: var(--ui-font);
+      font-size: var(--ui-font-size);
+      margin:0;
+      padding:0;
+      background: var(--bg);
+      overflow:hidden;
+    }
+
+    #widgetRoot{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      padding:10px;
+      box-sizing:border-box;
+    }
+
+    /* Top bar: title + summary + actions */
+    #topBar{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:8px 10px;
+      box-sizing:border-box;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+
+    #topLeft{
+      min-width: 0;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+
+    #widgetTitle{
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    #summaryLine{
+      color:#333;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    #topRight{
+      display:flex;
+      gap:8px;
+      flex: 0 0 auto;
+      align-items:center;
+    }
+
+    button{
+      height:28px;
+      font-size: var(--ui-font-size);
+      font-family: var(--ui-font);
+      padding:0 10px;
+      cursor:pointer;
+      border:1px solid var(--border);
+      background:#fff;
+      border-radius: 4px;
+    }
+    button.primary{
+      background:#1f6feb;
+      border-color:#1f6feb;
+      color:#fff;
+    }
+    button.secondary{
+      background:#fff;
+      color:#333;
+    }
+    button:disabled{ opacity:.6; cursor:default; }
+
+    /* Collapsible filters panel */
+    #filtersPanel{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:10px;
+      box-sizing:border-box;
+    }
+    #filtersPanel.is-collapsed{ display:none; }
+
+    #filtersGrid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:10px;
+      align-items:end;
+    }
+
+    .field{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .field label{ color:#333; font-weight: 600; }
+    .field .hint{ color: var(--muted); font-weight: 400; }
+
+    select, input{
+      height:28px;
+      font-size: var(--ui-font-size);
+      font-family: var(--ui-font);
+      padding:2px 8px;
+      border:1px solid var(--border);
+      border-radius: 4px;
+      box-sizing:border-box;
+      width:100%;
+      min-width:0;
+      background:#fff;
+    }
+
+    .row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      min-width:0;
+    }
+    .row > *{ min-width:0; }
+    .row select{ flex: 1 1 auto; }
+    .row button{ flex: 0 0 auto; height:28px; }
+
+    /* Grid spans */
+    .span-2{ grid-column: span 2; }
+    .span-3{ grid-column: span 3; }
+    .span-4{ grid-column: span 4; }
+    .span-6{ grid-column: span 6; }
+    .span-12{ grid-column: span 12; }
+
+    /* Responsive: stack on smaller widths */
+    @media (max-width: 1200px){
+      .span-2,.span-3,.span-4,.span-6{ grid-column: span 12; }
+      #topBar{ flex-direction:column; align-items:flex-start; }
+      #topRight{ width:100%; justify-content:flex-end; }
+    }
+
+    /* Message line (errors / info) */
+    #messageLine{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:6px 10px;
+      box-sizing:border-box;
+      color: var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #messageLine.is-error{ color: var(--error); border-color: #f0c2c2; }
+
+    /* Chart takes remaining space */
+    #chartContainer{
+      flex:1 1 auto;
+      min-height:240px;
+      background: var(--panel);
+      border:1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+    }
+
+    /* Instance field hidden by default */
+    #instanceWrap{ display:none; }
+  </style>
+</head>
+
+<body>
+<div id="widgetRoot">
+
+  <div id="topBar">
+    <div id="topLeft">
+      <div id="widgetTitle">Performance Widget</div>
+      <div id="summaryLine">Initializing…</div>
+    </div>
+    <div id="topRight">
+      <button id="toggleFiltersBtn" class="secondary" type="button">Hide filters</button>
+      <button id="resetZoomBtn" class="secondary" type="button" disabled>Reset zoom</button>
+      <button id="refreshBtn" class="primary" type="button">Refresh</button>
+    </div>
+  </div>
+
+  <div id="filtersPanel">
+    <div id="filtersGrid">
+
+      <div class="field span-6">
+        <label for="groupSelect">Group</label>
+        <div class="row">
+          <select id="groupSelect"></select>
+          <button id="reloadGroupsBtn" class="secondary" type="button">Reload</button>
+        </div>
+      </div>
+
+      <div class="field span-2">
+        <label for="computerSearch">Computer search</label>
+        <input id="computerSearch" type="text" placeholder="e.g. srv01" />
+      </div>
+
+      <div class="field span-4">
+        <label for="computerSelect">Computer</label>
+        <div class="row">
+          <select id="computerSelect"></select>
+          <button id="reloadComputersBtn" class="secondary" type="button">Reload</button>
+        </div>
+      </div>
+
+      <div class="field span-4">
+        <label for="objectTypeSelect">Object type</label>
+        <select id="objectTypeSelect"></select>
+      </div>
+
+      <div class="field span-4">
+        <label for="counterSelect">Counter</label>
+        <select id="counterSelect"></select>
+      </div>
+
+      <div class="field span-4" id="instanceWrap">
+        <label for="instanceSelect">Instance</label>
+        <select id="instanceSelect"></select>
+      </div>
+
+      <div class="field span-2">
+        <label for="daysSelect">Time range (days)</label>
+        <select id="daysSelect"></select>
+      </div>
+
+      <div class="field span-3">
+        <label for="startDateTime">Start date + time</label>
+        <input type="datetime-local" id="startDateTime" />
+      </div>
+
+      <div class="field span-3">
+        <label for="endDateTime">End date + time</label>
+        <input type="datetime-local" id="endDateTime" />
+      </div>
+
+      <div class="field span-2">
+        <label for="targetSearch">Target filter</label>
+        <input id="targetSearch" type="text" placeholder="e.g. DB01 / C:" />
+      </div>
+
+      <div class="field span-2">
+        <label class="hint">&nbsp;</label>
+        <button id="reloadCountersBtn" class="secondary" type="button">Reload counters</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="messageLine">Ready.</div>
+
+  <div id="chartContainer"></div>
+
+</div>
+
+<script>
+(function(){
+  // =========================
+  // 0) Headers / CSRF
+  // =========================
+  var requestHeaders = { "Accept":"q=0.8;application/json;q=0.9", "Content-Type":"application/json" };
+  (function initCsrf(){
+    var m = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+    if (m) requestHeaders["SCOM-CSRF-TOKEN"] = decodeURIComponent(m[1]);
+  })();
+
+  // =========================
+  // 1) Config
+  // =========================
+  var WINDOWS_COMPUTER_CLASS = "System.Library!System.Computer"; // More portable than a hardcoded class GUID
+  var defaultDays = 3;
+  var maxGroupsToDisplay = 500;
+  var groupNamePrefix = "";       // optional: e.g. "APP-"
+  var groupNameContains = "";     // optional: e.g. "SQL"
+  var AUTOLOAD_DEBOUNCE_MS = 350;
+
+  // =========================
+  // 2) State
+  // =========================
+  var groupsAll = [];
+  var computersAll = [];
+  var counterMapByObject = {}; // objectName => { counterName => Set(instances) }
+  var currentChart = null;
+
+  // =========================
+  // 3) Helpers
+  // =========================
+  function escapeHtml(str){
+    return String(str)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  }
+
+  function pad2(v){ return (v<10?'0':'')+v; }
+
+  function formatDateTimeLocal(d){
+    return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate()) +
+           "T" + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
+  function formatHuman(d){
+    return pad2(d.getDate()) + "." + pad2(d.getMonth()+1) + "." + d.getFullYear() + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  }
+
+  function convertUTCDateToLocalDate(date){
+    var offsetMs = date.getTimezoneOffset() * 60 * 1000;
+    return new Date(date.getTime() - offsetMs);
+  }
+
+  function setMessage(text, isError){
+    $('#messageLine').toggleClass('is-error', !!isError).text(text || "");
+  }
+
+  function ajaxJson(url, method, data){
+    return $.ajax({
+      url: url,
+      type: method,
+      headers: requestHeaders,
+      contentType: "application/json; charset=utf-8",
+      dataType: "json",
+      processData: false,
+      data: data ? JSON.stringify(data) : null
+    });
+  }
+
+  function buildGroupCriteria(){
+    if (groupNamePrefix && groupNamePrefix.trim()){
+      var p = groupNamePrefix.trim().replace(/'/g,"''");
+      return "DisplayName LIKE '"+p+"%'";
+    }
+    if (groupNameContains && groupNameContains.trim()){
+      var c = groupNameContains.trim().replace(/'/g,"''");
+      return "DisplayName LIKE '%"+c+"%'";
+    }
+    return "DisplayName LIKE '%'";
+  }
+
+  function extractGroupScope(resp){
+    if (!resp) return [];
+    if (Array.isArray(resp)) return resp;
+    if (Array.isArray(resp.scopeDatas)) return resp.scopeDatas;
+    if (Array.isArray(resp.scopeData)) return resp.scopeData;
+    if (Array.isArray(resp.rows)) return resp.rows;
+    if (Array.isArray(resp.value)) return resp.value;
+    return [];
+  }
+
+  function sortGroups(scope){
+    return (scope || []).slice().sort(function(a,b){
+      var ad = ((a && (a.displayName || a.fullName || a.name || a.id)) || "").toLowerCase();
+      var bd = ((b && (b.displayName || b.fullName || b.name || b.id)) || "").toLowerCase();
+      return ad<bd?-1:(ad>bd?1:0);
+    });
+  }
+
+  // =========================
+  // MORE TICKS + LABEL THROTTLING
+  // =========================
+  function computeAxisInterval(startDate, endDate){
+    var ms = Math.max(0, endDate - startDate);
+    var hours = ms / 36e5;
+
+    // tickInterval = more tick marks/gridlines
+    // labelEvery  = show label only every N ticks (prevents overcrowding)
+    if (hours <= 6)   return { tickIntervalType:"minute", tickInterval:15, labelEvery:2, labelFormat:"HH:mm" };
+    if (hours <= 12)  return { tickIntervalType:"minute", tickInterval:30, labelEvery:2, labelFormat:"HH:mm" };
+    if (hours <= 24)  return { tickIntervalType:"hour",   tickInterval:1,  labelEvery:2, labelFormat:"DD.MM HH:mm" };
+    if (hours <= 72)  return { tickIntervalType:"hour",   tickInterval:2,  labelEvery:3, labelFormat:"DD.MM HH:mm" };
+    if (hours <= 168) return { tickIntervalType:"hour",   tickInterval:4,  labelEvery:3, labelFormat:"DD.MM HH:mm" };
+    if (hours <= 336) return { tickIntervalType:"hour",   tickInterval:6,  labelEvery:4, labelFormat:"DD.MM HH:mm" };
+    return            { tickIntervalType:"day",           tickInterval:1,  labelEvery:1, labelFormat:"DD.MM.YYYY" };
+  }
+
+  function findLegendRow(ds, legendRows){
+    if (!legendRows || !legendRows.length) return null;
+    var dsInst = (ds.instance || "").toString();
+    for (var i=0;i<legendRows.length;i++){
+      var r = legendRows[i];
+      if (r.id !== ds.id) continue;
+      var rInst = (r.instance || r.instancename || "").toString();
+      if (dsInst && rInst && dsInst === rInst) return r;
+      if (!dsInst || !rInst) return r;
+      return r;
+    }
+    return null;
+  }
+
+  function getGroupName(gid){
+    if (!gid) return "";
+    var g = (groupsAll || []).find(function(x){ return x && x.id === gid; });
+    return (g && (g.displayName || g.fullName)) ? (g.displayName || g.fullName) : ($('#groupSelect option:selected').text() || gid);
+  }
+
+  function getComputerName(cid){
+    if (!cid) return "";
+    var c = (computersAll || []).find(function(x){ return x && x.id === cid; });
+    return (c && (c.displayname || c.path)) ? (c.displayname || c.path) : ($('#computerSelect option:selected').text() || cid);
+  }
+
+  function getYAxisSuffix(counterName){
+    var s = (counterName || "").toLowerCase();
+    if (s.indexOf("%") !== -1 || s.indexOf("percent") !== -1) return " %";
+    return "";
+  }
+
+  function getSeriesPalette(index){
+    var palettes = [
+      { line:"#1d4ed8", marker:"#1e40af" },
+      { line:"#0f766e", marker:"#115e59" },
+      { line:"#b45309", marker:"#92400e" },
+      { line:"#7c3aed", marker:"#6d28d9" },
+      { line:"#be123c", marker:"#9f1239" },
+      { line:"#0891b2", marker:"#0e7490" }
+    ];
+    return palettes[index % palettes.length];
+  }
+
+  function updateSummary(){
+    var gid = $('#groupSelect').val();
+    var cid = $('#computerSelect').val();
+    var obj = $('#objectTypeSelect').val();
+    var cn  = $('#counterSelect').val();
+    var sel = getSelectedCounter();
+    var inst = sel ? sel.instancename : "";
+
+    var startStr = $('#startDateTime').val();
+    var endStr   = $('#endDateTime').val();
+    var start = startStr ? new Date(startStr) : null;
+    var end   = endStr ? new Date(endStr) : null;
+
+    var pieces = [];
+
+    if (gid) pieces.push("Group: " + getGroupName(gid));
+    if (cid) pieces.push("Computer: " + getComputerName(cid));
+
+    if (obj && cn){
+      var metric = cn;
+      if (inst && inst !== "%") metric += " (" + inst + ")";
+      pieces.push("Metric: " + obj + " \\ " + metric);
+    }
+
+    if (start && !isNaN(start.getTime()) && end && !isNaN(end.getTime())){
+      pieces.push("Range: " + formatHuman(start) + " - " + formatHuman(end));
+    }
+
+    var tf = ($('#targetSearch').val()||"").trim();
+    if (tf) pieces.push("Filter: " + tf);
+
+    $('#summaryLine').text(pieces.length ? pieces.join(" | ") : "Select Group → Computer → Object type → Counter.");
+  }
+
+  // =========================
+  // 4) UI init
+  // =========================
+  function initDays(){
+    var $d = $('#daysSelect').empty();
+    for (var i=1;i<=90;i++){
+      $d.append($('<option>',{value:i, text:i+" day"+(i>1?"s":"")}));
+    }
+    $d.val(defaultDays);
+  }
+
+  function initDates(){
+    var now = new Date();
+    var start = new Date(now.getTime() - defaultDays*24*60*60*1000);
+    $('#startDateTime').val(formatDateTimeLocal(start));
+    $('#endDateTime').val(formatDateTimeLocal(now));
+  }
+
+  function syncDatesFromDays(){
+    var days = parseInt($('#daysSelect').val(),10);
+    if (isNaN(days) || days<1) return;
+    var endStr = $('#endDateTime').val();
+    var end = endStr ? new Date(endStr) : new Date();
+    if (isNaN(end.getTime())) end = new Date();
+    var start = new Date(end.getTime() - days*24*60*60*1000);
+    $('#startDateTime').val(formatDateTimeLocal(start));
+  }
+
+  // =========================
+  // 4b) Auto-load (debounced)
+  // =========================
+  var autoTimer = null;
+
+  function selectionsReady(){
+    if (!$('#groupSelect').val()) return false;
+    if (!$('#computerSelect').val()) return false;
+    if (!$('#objectTypeSelect').val()) return false;
+    if (!$('#counterSelect').val()) return false;
+
+    if ($('#instanceWrap').is(':visible')){
+      var v = $('#instanceSelect').val();
+      if (!v) return false;
+    }
+    return true;
+  }
+
+  function scheduleAutoLoad(){
+    updateSummary();
+    if (!selectionsReady()) return;
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(function(){
+      loadAndRender();
+    }, AUTOLOAD_DEBOUNCE_MS);
+  }
+
+  // =========================
+  // 5) Load groups
+  // =========================
+  function loadGroups(){
+    $('#groupSelect').prop('disabled', true).empty().append($('<option>',{value:"", text:"Loading groups…"}));
+    setMessage("Loading groups…", false);
+    updateSummary();
+
+    var criteria = buildGroupCriteria();
+
+    function tryArray(c){ return ajaxJson("/OperationsManager/data/scomGroups", "POST", [c]); }
+    function tryString(c){
+      return $.ajax({
+        url: "/OperationsManager/data/scomGroups",
+        type:"POST",
+        headers: requestHeaders,
+        contentType:"application/json; charset=utf-8",
+        dataType:"json",
+        data: JSON.stringify(c)
+      });
+    }
+    function tryForm(c){
+      return $.ajax({
+        url: "/OperationsManager/data/scomGroups",
+        type:"POST",
+        headers: requestHeaders,
+        contentType:"application/x-www-form-urlencoded; charset=UTF-8",
+        dataType:"json",
+        data: {criteria:c}
+      });
+    }
+
+    function requestGroups(c){
+      return tryArray(c).catch(function(){ return tryString(c); }).catch(function(){ return tryForm(c); });
+    }
+
+    function populateGroups(scope, criteriaUsed){
+      scope = extractGroupScope(scope).filter(function(x){ return x && x.id; });
+      scope = sortGroups(scope);
+
+      var total = scope.length;
+      if (maxGroupsToDisplay > 0 && scope.length > maxGroupsToDisplay){
+        scope = scope.slice(0, maxGroupsToDisplay);
+      }
+
+      groupsAll = scope;
+
+      var $g = $('#groupSelect').empty();
+      $g.append($('<option>',{value:"", text:"-- Select a group --"}));
+      scope.forEach(function(g){
+        var name = g.displayName || g.fullName || g.name || g.id;
+        $g.append($('<option>',{value:g.id, text: name}));
+      });
+
+      $('#groupSelect').prop('disabled', false);
+      if (!total){
+        setMessage("No groups returned. Verify the SCOM endpoint, credentials, and any group name filter. Criteria used: " + criteriaUsed, true);
+      } else {
+        setMessage("Groups loaded: " + total + ".", false);
+      }
+      updateSummary();
+    }
+
+    return requestGroups(criteria).done(function(resp){
+      var scope = extractGroupScope(resp).filter(function(x){ return x && x.id; });
+      var hasFilter = !!((groupNamePrefix && groupNamePrefix.trim()) || (groupNameContains && groupNameContains.trim()));
+
+      if (!scope.length && hasFilter){
+        var fallbackCriteria = "DisplayName LIKE '%'";
+        setMessage("No groups matched the configured filter. Retrying without a group name filter…", false);
+        requestGroups(fallbackCriteria).done(function(fallbackResp){
+          populateGroups(fallbackResp, fallbackCriteria);
+        }).fail(function(xhr){
+          $('#groupSelect').prop('disabled', false).empty().append($('<option>',{value:"", text:"Failed (HTTP "+xhr.status+")"}));
+          setMessage("Failed to load groups. HTTP " + xhr.status, true);
+        });
+        return;
+      }
+
+      populateGroups(resp, criteria);
+    }).fail(function(xhr){
+      $('#groupSelect').prop('disabled', false).empty().append($('<option>',{value:"", text:"Failed (HTTP "+xhr.status+")"}));
+      setMessage("Failed to load groups. HTTP "+xhr.status, true);
+    });
+  }
+
+  // =========================
+  // 6) Load computers in group
+  // =========================
+  function loadComputersForGroup(groupId){
+    $('#computerSelect').prop('disabled', true).empty().append($('<option>',{value:"",text:"Loading computers…"}));
+    setMessage("Loading computers…", false);
+    updateSummary();
+
+    var payload = {
+      classId: WINDOWS_COMPUTER_CLASS,
+      objectIds: {},
+      displayColumns: ["id","displayname","path"]
+    };
+    payload.objectIds[groupId] = -1;
+
+    return ajaxJson("/OperationsManager/data/state", "POST", payload).done(function(resp){
+      var rows = (resp && resp.rows) ? resp.rows : [];
+      rows = rows.filter(function(r){ return r && r.id; });
+
+      rows.sort(function(a,b){
+        var ad = (a.displayname||"").toLowerCase();
+        var bd = (b.displayname||"").toLowerCase();
+        return ad<bd?-1:(ad>bd?1:0);
+      });
+
+      computersAll = rows;
+
+      applyComputerFilterAndPopulate();
+
+      $('#computerSelect').prop('disabled', false);
+      setMessage("Computers loaded: "+rows.length+".", false);
+      updateSummary();
+    }).fail(function(xhr){
+      $('#computerSelect').prop('disabled', false).empty().append($('<option>',{value:"",text:"Failed (HTTP "+xhr.status+")"}));
+      setMessage("Failed to load computers. HTTP "+xhr.status, true);
+    });
+  }
+
+  function applyComputerFilterAndPopulate(){
+    var term = ($('#computerSearch').val()||"").toLowerCase().trim();
+    var list = computersAll;
+
+    if (term){
+      list = computersAll.filter(function(c){
+        var dn = (c.displayname||"").toLowerCase();
+        var p  = (c.path||"").toLowerCase();
+        return dn.indexOf(term) !== -1 || p.indexOf(term) !== -1;
+      });
+    }
+
+    var $c = $('#computerSelect').empty();
+    $c.append($('<option>',{value:"", text:"-- Select a computer --"}));
+    list.forEach(function(c){
+      var label = c.displayname || c.path || c.id;
+      $c.append($('<option>',{value:c.id, text:label}));
+    });
+  }
+
+  // =========================
+  // 7) Load counters for selected scope (computer)
+  // =========================
+  function loadCountersForScope(scopeId){
+    counterMapByObject = {};
+    $('#objectTypeSelect').empty().append($('<option>',{value:"",text:"Loading…"})).prop('disabled',true);
+    $('#counterSelect').empty().append($('<option>',{value:"",text:"Loading…"})).prop('disabled',true);
+    $('#instanceWrap').hide();
+    $('#instanceSelect').empty();
+
+    setMessage("Loading counters…", false);
+    updateSummary();
+
+    return $.ajax({
+      url: "/OperationsManager/data/performanceCounters/" + scopeId,
+      type: "GET",
+      headers: requestHeaders,
+      dataType: "json"
+    }).done(function(resp){
+      var rows = (resp && resp.rows) ? resp.rows : [];
+      rows = rows.filter(function(r){ return r && r.objectname && r.countername != null; });
+
+      counterMapByObject = {};
+      rows.forEach(function(r){
+        var obj = r.objectname;
+        var ctr = r.countername;
+        var inst = (r.instancename == null) ? "" : String(r.instancename);
+
+        if (!counterMapByObject[obj]) counterMapByObject[obj] = {};
+        if (!counterMapByObject[obj][ctr]) counterMapByObject[obj][ctr] = new Set();
+        counterMapByObject[obj][ctr].add(inst);
+      });
+
+      var objectTypes = Object.keys(counterMapByObject).sort(function(a,b){
+        return a.localeCompare(b, undefined, {sensitivity:'base'});
+      });
+
+      var $o = $('#objectTypeSelect').empty().prop('disabled', false);
+      $o.append($('<option>',{value:"",text:"-- Select object type --"}));
+      objectTypes.forEach(function(o){
+        $o.append($('<option>',{value:o, text:o}));
+      });
+
+      $('#counterSelect').empty().append($('<option>',{value:"",text:"-- Select object type first --"})).prop('disabled', true);
+      setMessage("Counters loaded.", false);
+      updateSummary();
+    }).fail(function(xhr){
+      setMessage("Failed to load counters. HTTP "+xhr.status, true);
+      $('#objectTypeSelect').empty().append($('<option>',{value:"",text:"Failed"})).prop('disabled',true);
+      $('#counterSelect').empty().append($('<option>',{value:"",text:"Failed"})).prop('disabled',true);
+      $('#instanceWrap').hide();
+    });
+  }
+
+  function populateCountersForObjectType(){
+    var obj = $('#objectTypeSelect').val();
+
+    $('#instanceWrap').hide();
+    $('#instanceSelect').empty();
+
+    if (!obj || !counterMapByObject[obj]){
+      $('#counterSelect').empty().append($('<option>',{value:"",text:"-- Select object type first --"})).prop('disabled', true);
+      updateSummary();
+      return;
+    }
+
+    var counterNames = Object.keys(counterMapByObject[obj]).sort(function(a,b){
+      return a.localeCompare(b, undefined, {sensitivity:'base'});
+    });
+
+    var $c = $('#counterSelect').empty().prop('disabled', false);
+    $c.append($('<option>',{value:"",text:"-- Select counter --"}));
+    counterNames.forEach(function(cn){
+      $c.append($('<option>',{value:cn, text:cn}));
+    });
+    updateSummary();
+  }
+
+  function populateInstances(){
+    var obj = $('#objectTypeSelect').val();
+    var cn = $('#counterSelect').val();
+    $('#instanceWrap').hide();
+    $('#instanceSelect').empty();
+
+    if (!obj || !cn || !counterMapByObject[obj] || !counterMapByObject[obj][cn]) return;
+
+    var instances = Array.from(counterMapByObject[obj][cn]).map(function(x){ return x == null ? "" : String(x); });
+
+    if (instances.length <= 1) return;
+
+    var $i = $('#instanceSelect').empty();
+    $i.append($('<option>',{value:"all", text:"All"}));
+    instances.sort(function(a,b){ return a.localeCompare(b, undefined, {sensitivity:'base'});
+    });
+    instances.forEach(function(inst){
+      var label = inst === "" ? "(empty)" : inst;
+      $i.append($('<option>',{value:inst, text:label}));
+    });
+    $i.val("all");
+    $('#instanceWrap').show();
+  }
+
+  function getSelectedCounter(){
+    var obj = $('#objectTypeSelect').val();
+    var cn  = $('#counterSelect').val();
+    if (!obj || !cn) return null;
+
+    var instSet = (counterMapByObject[obj] && counterMapByObject[obj][cn]) ? counterMapByObject[obj][cn] : null;
+    var instances = instSet ? Array.from(instSet).map(function(x){ return x == null ? "" : String(x); }) : [""];
+
+    var instToSend = "";
+    if (instances.length === 1){
+      instToSend = instances[0];
+    } else {
+      var sel = $('#instanceSelect').val();
+      if (!sel || sel === "all") instToSend = "%";
+      else instToSend = sel;
+    }
+
+    return { objectname: obj, countername: cn, instancename: instToSend };
+  }
+
+  // =========================
+  // 8) Performance request + render
+  // =========================
+  function loadAndRender(){
+    var gid = $('#groupSelect').val();
+    var cid = $('#computerSelect').val();
+    var sel = getSelectedCounter();
+
+    updateSummary();
+
+    if (!gid){ setMessage("Select a group.", true); return; }
+    if (!cid){ setMessage("Select a computer.", true); return; }
+    if (!sel){ setMessage("Select an object type and counter.", true); return; }
+
+    var startStr = $('#startDateTime').val();
+    var endStr   = $('#endDateTime').val();
+
+    var startDate = startStr ? new Date(startStr) : null;
+    var endDate   = endStr ? new Date(endStr) : null;
+    var now = new Date();
+
+    if (!startDate || isNaN(startDate.getTime())) startDate = new Date(now.getTime() - defaultDays*24*60*60*1000);
+    if (!endDate || isNaN(endDate.getTime())) endDate = now;
+
+    if (endDate > now) endDate = now;
+    if (endDate < startDate){ var t = startDate; startDate = endDate; endDate = t; }
+
+    var durationMinutes = Math.max(5, Math.round((now - startDate) / 60000));
+    var targetTerm = ($('#targetSearch').val()||"").toLowerCase().trim();
+
+    $('#refreshBtn').prop('disabled', true).text("Loading…");
+    setMessage("Loading performance data…", false);
+
+    var payload = {
+      id: cid,
+      performanceCounters: [{
+        objectname: sel.objectname,
+        countername: sel.countername,
+        instancename: sel.instancename
+      }],
+      legends: ["target","path","instance","lastvalue"],
+      duration: durationMinutes
+    };
+
+    ajaxJson("/OperationsManager/data/performance", "POST", payload).done(function(result){
+      if (!result || !result.datasets || !result.datasets.length){
+        setMessage("No datasets returned.", true);
+        $('#chartContainer').html("");
+        $('#resetZoomBtn').prop('disabled', true);
+        return;
+      }
+
+      var series = [];
+      var legendRows = (result.legends && result.legends.rows) ? result.legends.rows : [];
+
+      result.datasets.forEach(function(ds, dsIndex){
+        var leg = findLegendRow(ds, legendRows) || {};
+        var name = (leg.path || leg.target || ds.id || "");
+        var inst = (leg.instance || leg.instancename || ds.instance || "");
+
+        if (inst && name.indexOf(inst) === -1){
+          name = name + " (" + inst + ")";
+        }
+
+        if (targetTerm){
+          var hay = (name || "").toLowerCase();
+          if (hay.indexOf(targetTerm) === -1) return;
+        }
+
+        var points = [];
+        var dataDict = ds.data || {};
+        for (var key in dataDict){
+          if (!dataDict.hasOwnProperty(key)) continue;
+          var utcDate = new Date(key);
+          if (isNaN(utcDate.getTime())) continue;
+
+          if (utcDate < startDate) continue;
+          if (utcDate > endDate) continue;
+
+          var localDate = convertUTCDateToLocalDate(utcDate);
+          points.push({ x: localDate, y: dataDict[key] });
+        }
+
+        points.sort(function(a,b){ return a.x - b.x; });
+        if (!points.length) return;
+
+        var palette = getSeriesPalette(dsIndex);
+        series.push({
+          type: "spline",
+          showInLegend: true,
+          name: name || ds.id,
+          dataPoints: points,
+          markerSize: points.length <= 24 ? 4 : 0,
+          markerType: "circle",
+          markerColor: palette.marker,
+          lineColor: palette.line,
+          lineThickness: 3,
+          color: palette.line
+        });
+      });
+
+      if (!series.length){
+        setMessage("No data points for the selected range / filter.", true);
+        $('#chartContainer').html("");
+        $('#resetZoomBtn').prop('disabled', true);
+        return;
+      }
+
+      renderChart(sel, startDate, endDate, series);
+      setMessage("Ready.", false);
+
+    }).fail(function(xhr){
+      setMessage("Request failed. HTTP " + xhr.status, true);
+      $('#chartContainer').html("");
+      $('#resetZoomBtn').prop('disabled', true);
+    }).always(function(){
+      $('#refreshBtn').prop('disabled', false).text("Refresh");
+    });
+  }
+
+  function renderChart(sel, startDate, endDate, series){
+    var axis = computeAxisInterval(startDate, endDate);
+    var fontFamily = "Segoe UI Variable, Segoe UI, Arial, Helvetica, sans-serif";
+
+    var titleText = sel.countername;
+    var ySuffix = getYAxisSuffix(sel.countername);
+
+    currentChart = new CanvasJS.Chart("chartContainer", {
+      animationEnabled: true,
+      theme: "light2",
+      zoomEnabled: true,
+      backgroundColor: "#ffffff",
+      culture: "en",
+
+      title: {
+        text: titleText,
+        fontFamily: fontFamily,
+        fontSize: 28,
+        fontWeight: "600",
+        fontColor: "#0f172a",
+        padding: 18
+      },
+
+      legend: {
+        verticalAlign: "bottom",
+        horizontalAlign: "center",
+        fontFamily: fontFamily,
+        fontSize: 14,
+        fontColor: "#334155",
+        itemMaxWidth: 320,
+        margin: 14
+      },
+
+      axisX: {
+        title: "Date and time",
+        titleFontFamily: fontFamily,
+        titleFontSize: 15,
+        titleFontWeight: "600",
+        titleFontColor: "#334155",
+        labelFontFamily: fontFamily,
+        labelFontSize: 11,
+        labelFontColor: "#475569",
+
+        labelAutoFit: false,
+        labelAngle: 0,
+
+        intervalType: axis.tickIntervalType,
+        interval: axis.tickInterval,
+        minimum: startDate,
+        maximum: endDate,
+
+        tickLength: 8,
+        tickThickness: 1,
+        lineColor: "#94a3b8",
+        lineThickness: 1,
+
+        /* semi-transparent vertical grid */
+        gridThickness: 1,
+        gridColor: "rgba(148,163,184,0.22)",
+        gridDashType: "dash",
+        margin: 14,
+
+        /* label throttling while keeping many ticks */
+        labelFormatter: (function(){
+          var tickMs =
+            axis.tickIntervalType === "minute" ? axis.tickInterval * 60000 :
+            axis.tickIntervalType === "hour"   ? axis.tickInterval * 3600000 :
+                                                 axis.tickInterval * 86400000;
+
+          var labelEvery = Math.max(1, axis.labelEvery || 1);
+
+          return function(e){
+            var diff = e.value - startDate;
+            if (diff < 0) return "";
+            var tickIndex = Math.round(diff / tickMs);
+            if (tickIndex % labelEvery !== 0) return "";
+            return CanvasJS.formatDate(e.value, axis.labelFormat || "DD.MM HH:mm");
+          };
+        })(),
+
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+
+      axisY: {
+        title: titleText,
+        titleFontFamily: fontFamily,
+        titleFontSize: 15,
+        titleFontWeight: "600",
+        titleFontColor: "#334155",
+        labelFontFamily: fontFamily,
+        labelFontSize: 11,
+        labelFontColor: "#475569",
+        suffix: ySuffix,
+        lineColor: "#94a3b8",
+        lineThickness: 1,
+        tickLength: 8,
+        tickThickness: 1,
+        margin: 10,
+
+        /* semi-transparent horizontal grid */
+        gridThickness: 1,
+        gridColor: "rgba(148,163,184,0.22)",
+        gridDashType: "dash",
+
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+
+      toolTip: {
+        fontFamily: fontFamily,
+        fontSize: 13,
+        cornerRadius: 8,
+        borderThickness: 0,
+        backgroundColor: "#0f172a",
+        fontColor: "#f8fafc",
+        content: "{name}<br/><b>{x:DD.MM.YYYY HH:mm}</b>: {y}" + (ySuffix ? ySuffix : "")
+      },
+
+      data: series
+    });
+
+    currentChart.render();
+    $('#resetZoomBtn').prop('disabled', false);
+  }
+
+  // =========================
+  // 9) Events
+  // =========================
+  function wireEvents(){
+    $('#toggleFiltersBtn').on('click', function(){
+      var $p = $('#filtersPanel');
+      var isCollapsed = $p.hasClass('is-collapsed');
+      if (isCollapsed){
+        $p.removeClass('is-collapsed');
+        $(this).text("Hide filters");
+      } else {
+        $p.addClass('is-collapsed');
+        $(this).text("Show filters");
+      }
+    });
+
+    $('#resetZoomBtn').on('click', function(){
+      if (currentChart && currentChart.resetZoom) currentChart.resetZoom();
+    });
+
+    $('#reloadGroupsBtn').on('click', function(){ loadGroups(); });
+
+    $('#groupSelect').on('change', function(){
+      var gid = $(this).val();
+
+      computersAll = [];
+      applyComputerFilterAndPopulate();
+
+      counterMapByObject = {};
+      $('#objectTypeSelect').empty().append($('<option>',{value:"",text:"-- Select computer first --"})).prop('disabled', true);
+      $('#counterSelect').empty().append($('<option>',{value:"",text:"-- Select computer first --"})).prop('disabled', true);
+      $('#instanceWrap').hide();
+      $('#instanceSelect').empty();
+
+      updateSummary();
+      if (!gid) return;
+
+      loadComputersForGroup(gid);
+    });
+
+    $('#computerSearch').on('input', function(){
+      applyComputerFilterAndPopulate();
+      updateSummary();
+    });
+
+    $('#reloadComputersBtn').on('click', function(){
+      var gid = $('#groupSelect').val();
+      if (!gid) { setMessage("Select a group.", true); return; }
+      loadComputersForGroup(gid);
+    });
+
+    $('#computerSelect').on('change', function(){
+      var cid = $(this).val();
+
+      counterMapByObject = {};
+      $('#objectTypeSelect').empty().append($('<option>',{value:"",text:"-- Select computer first --"})).prop('disabled', true);
+      $('#counterSelect').empty().append($('<option>',{value:"",text:"-- Select computer first --"})).prop('disabled', true);
+      $('#instanceWrap').hide();
+      $('#instanceSelect').empty();
+
+      updateSummary();
+      if (!cid) return;
+
+      loadCountersForScope(cid);
+    });
+
+    $('#reloadCountersBtn').on('click', function(){
+      var cid = $('#computerSelect').val();
+      if (!cid){ setMessage("Select a computer.", true); return; }
+      loadCountersForScope(cid);
+    });
+
+    $('#objectTypeSelect').on('change', function(){
+      populateCountersForObjectType();
+      scheduleAutoLoad();
+    });
+
+    $('#counterSelect').on('change', function(){
+      populateInstances();
+      scheduleAutoLoad();
+    });
+
+    $('#instanceSelect').on('change', function(){
+      scheduleAutoLoad();
+    });
+
+    $('#daysSelect').on('change', function(){
+      syncDatesFromDays();
+      scheduleAutoLoad();
+    });
+
+    $('#startDateTime, #endDateTime').on('change', function(){
+      scheduleAutoLoad();
+    });
+
+    $('#targetSearch').on('input', function(){
+      scheduleAutoLoad();
+    });
+
+    $('#refreshBtn').on('click', function(){
+      loadAndRender();
+    });
+
+    // Re-render on resize
+    var resizeTimer = null;
+    $(window).on('resize', function(){
+      if (!currentChart) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function(){ currentChart.render(); }, 150);
+    });
+  }
+
+  // =========================
+  // 10) Startup
+  // =========================
+  function startup(){
+    initDays();
+    initDates();
+
+    $('#groupSelect').empty().append($('<option>',{value:"",text:"Loading…"}));
+    $('#computerSelect').empty().append($('<option>',{value:"",text:"-- Select group first --"}));
+    $('#objectTypeSelect').empty().append($('<option>',{value:"",text:"-- Select computer first --"})).prop('disabled', true);
+    $('#counterSelect').empty().append($('<option>',{value:"",text:"-- Select computer first --"})).prop('disabled', true);
+
+    wireEvents();
+    loadGroups();
+    updateSummary();
+  }
+
+  $(document).ready(startup);
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Alert Hotspots By Computer</title>
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/highcharts.js"></script>
+    <script src="/dashboardlibs/modules/exporting.js"></script>
+    <style>
+        :root { --ui-font:"Segoe UI",Arial,sans-serif; --bg:#f8fafc; --panel:#fff; --border:#dbe3ee; --text:#0f172a; --muted:#64748b; --primary:#2563eb; --primary-dark:#1d4ed8; }
+        body { margin:0; padding:10px; background:var(--bg); color:var(--text); font-family:var(--ui-font); }
+        .widget-shell { position:relative; min-height:640px; }
+        .controls { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px; background:var(--panel); border:1px solid var(--border); border-radius:14px; box-shadow:0 10px 24px rgba(15,23,42,.06); flex-wrap:wrap; }
+        .controls-left { display:flex; flex-direction:column; gap:4px; min-width:260px; }
+        .controls-left .title { font-size:20px; font-weight:700; line-height:1.2; }
+        .controls-left .summary { font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:760px; }
+        button { height:34px; font-size:13px; font-family:var(--ui-font); border-radius:10px; border:1px solid var(--primary); background:var(--primary); color:#fff; padding:0 12px; box-sizing:border-box; cursor:pointer; box-shadow:0 1px 2px rgba(15,23,42,.04); font-weight:600; }
+        button:hover { background:var(--primary-dark); }
+        #message { margin-bottom:10px; padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:12px; color:var(--muted); font-size:13px; }
+        #message.is-error { color:#b00020; border-color:#f0c2c2; }
+        .cards-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:12px; }
+        .hot-card,.panel { background:linear-gradient(180deg,#fff 0%,#f8fbff 100%); border:1px solid var(--border); border-radius:16px; box-shadow:0 12px 28px rgba(15,23,42,.06); }
+        .hot-card { padding:14px 16px; }
+        .hot-label { color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+        .hot-value { font-size:26px; font-weight:800; line-height:1.05; margin-bottom:6px; }
+        .hot-sub { color:var(--muted); font-size:13px; }
+        .panel-head { padding:14px 16px 6px; font-size:16px; font-weight:700; }
+        .panel-sub { padding:0 16px 12px; color:var(--muted); font-size:13px; }
+        #hotspotChart { height:420px; }
+        .footnote { padding:0 16px 16px; color:var(--muted); font-size:12px; }
+        .brand-badge { position:fixed; right:30px; bottom:26px; z-index:1; padding:10px 12px; border-radius:14px; background:rgba(255,255,255,.96); border:1px solid rgba(203,213,225,.9); box-shadow:0 14px 28px rgba(15,23,42,.14); pointer-events:none; user-select:none; }
+        .brand-watermark { display:block; width:min(180px,16vw); max-width:200px; opacity:1; filter:saturate(1.08) contrast(1.04); }
+        @media (max-width:900px){ .cards-grid{grid-template-columns:1fr;} .brand-badge{right:18px; bottom:18px; padding:8px 10px; border-radius:12px;} .brand-watermark{width:min(140px,34vw);} }
+    </style>
+</head>
+<body>
+<div class="widget-shell">
+    <div class="controls">
+        <div class="controls-left">
+            <div class="title">Alert Hotspots By Computer</div>
+            <div id="summary" class="summary">Initializing...</div>
+        </div>
+        <button id="refreshBtn" type="button">Refresh</button>
+    </div>
+    <div id="message">Ready.</div>
+    <div class="cards-grid">
+        <div class="hot-card"><div class="hot-label">Noisiest Computer</div><div id="hotComputer" class="hot-value">-</div><div id="hotComputerSub" class="hot-sub">Highest current open-alert volume</div></div>
+        <div class="hot-card"><div class="hot-label">Computers With Alerts</div><div id="hotCoverage" class="hot-value">-</div><div class="hot-sub">How broad the current alert impact is</div></div>
+        <div class="hot-card"><div class="hot-label">Critical Alerts</div><div id="hotCritical" class="hot-value" style="color:#dc2626;">-</div><div class="hot-sub">Critical subset of the current alert backlog</div></div>
+    </div>
+    <div class="panel">
+        <div class="panel-head">Current Alert Pressure</div>
+        <div class="panel-sub">Computers are ranked by open alert count, stacked by severity for a quick operational hotspot view.</div>
+        <div id="hotspotChart"></div>
+        <div class="footnote">Scope: Demo Windows Computers. Only currently open alerts are included.</div>
+    </div>
+</div>
+<div class="brand-badge"><img class="brand-watermark" src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo"></div>
+<script>
+(function(){
+  var GROUP_ID="9c95accb-2417-b6d9-dd03-b39e896fccab";
+  var GROUP_NAME="Demo Windows Computers";
+  var requestHeaders={Accept:"q=0.8;application/json;q=0.9","Content-Type":"application/json"};
+  (function(){var m=document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/); if(m) requestHeaders["SCOM-CSRF-TOKEN"]=decodeURIComponent(m[1]);})();
+  function setMessage(text,isError){ $("#message").toggleClass("is-error",!!isError).text(text||""); }
+  function ajaxJson(url,data){ return $.ajax({url:url,type:"POST",headers:requestHeaders,contentType:"application/json; charset=utf-8",dataType:"json",processData:false,data:JSON.stringify(data)}); }
+  function normalizeSeverity(sev){ var s=String(sev==null?"":sev).trim().toLowerCase(); if(s==="2"||s==="error"||s==="critical") return "critical"; if(s==="1"||s==="warning") return "warning"; if(s==="0"||s==="information"||s==="info") return "info"; return "warning"; }
+  function pad2(v){ return (v<10?"0":"")+v; }
+  function formatHuman(d){ return pad2(d.getDate())+"."+pad2(d.getMonth()+1)+"."+d.getFullYear()+" "+pad2(d.getHours())+":"+pad2(d.getMinutes()); }
+  function renderChart(items){
+    Highcharts.chart("hotspotChart",{chart:{type:"bar",backgroundColor:"#ffffff"},title:{text:null},xAxis:{categories:items.map(function(x){return x.name;}),title:{text:null}},yAxis:{min:0,allowDecimals:false,title:{text:"Open alerts"},stackLabels:{enabled:true,style:{fontWeight:"700",color:"#0f172a"}}},legend:{reversed:true},tooltip:{shared:true},plotOptions:{series:{stacking:"normal",borderRadius:4,dataLabels:{enabled:true,formatter:function(){ return this.y?this.y:""; }}}},series:[{name:"Information",data:items.map(function(x){return x.info;}),color:"#0284c7"},{name:"Warning",data:items.map(function(x){return x.warning;}),color:"#f59e0b"},{name:"Critical",data:items.map(function(x){return x.critical;}),color:"#dc2626"}],exporting:{enabled:true},credits:{enabled:true}});
+  }
+  function loadData(){
+    $("#refreshBtn").prop("disabled",true).text("Loading...");
+    setMessage("Loading alert hotspots...",false);
+    $.when(
+      ajaxJson("/OperationsManager/data/state",{classId:"System.Library!System.Computer",objectIds:{ [GROUP_ID]:-1 },criteria:"((HealthState = '0') OR (HealthState = '1') OR (HealthState = '2') OR (HealthState = '3') OR HealthState is null)",displayColumns:["displayname","path","id"]}),
+      ajaxJson("/OperationsManager/data/alert",{classId:null,objectIds:{ [GROUP_ID]:-1 },criteria:"((Severity = '0') OR (Severity = '1') OR (Severity = '2')) AND ((ResolutionState = '0') OR (ResolutionState = '247') OR (ResolutionState = '248') OR (ResolutionState = '249') OR (ResolutionState = '250') OR (ResolutionState = '254') OR (ResolutionState = '255'))",displayColumns:["severity","monitoringobjectdisplayname","monitoringobjectpath","monitoringobjectid","name","timegenerated","timeGenerated","lastModified"]})
+    ).done(function(stateResp,alertResp){
+      var stateRows=(stateResp[0]&&stateResp[0].rows)||[], alertRows=(alertResp[0]&&alertResp[0].rows)||[], map={}, buckets={}, criticalTotal=0;
+      stateRows.forEach(function(r){ if(r.id) map[String(r.id).toLowerCase()]=r.displayname||r.path||r.id; if(r.displayname) map[String(r.displayname).toLowerCase()]=r.displayname; if(r.path) map[String(r.path).toLowerCase()]=r.displayname||r.path; });
+      alertRows.forEach(function(r){
+        var name=map[String(r.monitoringobjectid||"").toLowerCase()]||map[String(r.monitoringobjectdisplayname||"").toLowerCase()]||map[String(r.monitoringobjectpath||"").toLowerCase()]||r.monitoringobjectdisplayname||r.monitoringobjectpath||"Unknown";
+        if(!buckets[name]) buckets[name]={name:name,critical:0,warning:0,info:0,total:0};
+        var sev=normalizeSeverity(r.severity);
+        if(sev==="critical"){ buckets[name].critical++; criticalTotal++; } else if(sev==="warning") buckets[name].warning++; else buckets[name].info++;
+        buckets[name].total++;
+      });
+      var items=Object.keys(buckets).map(function(k){ return buckets[k]; }).sort(function(a,b){ return b.total-a.total; }).slice(0,10);
+      $("#summary").text("Group: "+GROUP_NAME+" | Last refresh: "+formatHuman(new Date())+" | Open alerts: "+alertRows.length);
+      $("#hotCoverage").text(items.length);
+      $("#hotCritical").text(criticalTotal);
+      if(!items.length){
+        $("#hotComputer").text("-");
+        $("#hotComputerSub").text("No computers currently have open alerts");
+        $("#hotspotChart").html("<div style='padding:24px;color:#64748b;font-family:Segoe UI, Arial, sans-serif;'>No open alerts found in the current group.</div>");
+        setMessage("No alert hotspots found in the current scope.",false);
+      }else{
+        $("#hotComputer").text(items[0].name);
+        $("#hotComputerSub").text(items[0].total+" open alert(s) currently make this the busiest object");
+        renderChart(items);
+        setMessage("Alert hotspots loaded successfully.",false);
+      }
+    }).fail(function(xhr){ console.error(xhr); $("#hotspotChart").html("<div style='padding:24px;color:#b00020;font-family:Segoe UI, Arial, sans-serif;'>Failed to load alert hotspot data.</div>"); setMessage("Failed to load alert hotspots.",true); })
+      .always(function(){ $("#refreshBtn").prop("disabled",false).text("Refresh"); });
+  }
+  $(function(){ $("#refreshBtn").on("click",loadData); loadData(); });
+})();
+</script>
+</body>
+</html>

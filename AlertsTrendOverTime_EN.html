@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Alerts Trend Over Time</title>
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/highcharts.js"></script>
+    <script src="/dashboardlibs/modules/exporting.js"></script>
+    <style>
+        :root {
+            --ui-font: "Segoe UI", Arial, sans-serif;
+            --bg: #f8fafc;
+            --panel: #ffffff;
+            --border: #dbe3ee;
+            --text: #0f172a;
+            --muted: #64748b;
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+        }
+
+        body {
+            margin: 0;
+            padding: 10px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--ui-font);
+        }
+
+        .widget-shell {
+            position: relative;
+            min-height: 460px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+            flex-wrap: wrap;
+        }
+
+        .controls-left {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 260px;
+        }
+
+        .controls-left .title {
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .controls-left .summary {
+            font-size: 13px;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 760px;
+        }
+
+        .controls-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .controls-right label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        select,
+        button {
+            height: 34px;
+            font-size: 13px;
+            font-family: var(--ui-font);
+            border-radius: 10px;
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: var(--text);
+            padding: 0 12px;
+            box-sizing: border-box;
+        }
+
+        button {
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+
+        button.primary {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+            font-weight: 600;
+        }
+
+        button.primary:hover {
+            background: var(--primary-dark);
+        }
+
+        #message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        #message.is-error {
+            color: #b00020;
+            border-color: #f0c2c2;
+        }
+
+        #chartContainer {
+            position: relative;
+            z-index: 2;
+            height: 380px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+            overflow: hidden;
+        }
+
+        .brand-badge {
+            position: fixed;
+            right: 30px;
+            bottom: 26px;
+            z-index: 1;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(203, 213, 225, 0.9);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .brand-watermark {
+            display: block;
+            width: min(220px, 18vw);
+            max-width: 240px;
+            opacity: 1;
+            filter: saturate(1.08) contrast(1.04);
+        }
+
+        @media (max-width: 900px) {
+            .controls {
+                align-items: flex-start;
+            }
+
+            .controls-right {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .brand-badge {
+                right: 18px;
+                bottom: 18px;
+                padding: 8px 10px;
+                border-radius: 12px;
+            }
+
+            .brand-watermark {
+                width: min(160px, 34vw);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="widget-shell">
+        <div class="controls">
+            <div class="controls-left">
+                <div class="title">Alerts Trend Over Time</div>
+                <div id="summary" class="summary">Initializing...</div>
+            </div>
+            <div class="controls-right">
+                <label for="daysSelect">Range (days)</label>
+                <select id="daysSelect">
+                    <option value="7">7 days</option>
+                    <option value="14">14 days</option>
+                    <option value="30">30 days</option>
+                    <option value="60">60 days</option>
+                </select>
+                <button id="refreshBtn" class="primary" type="button">Refresh</button>
+            </div>
+        </div>
+
+        <div id="message">Ready.</div>
+        <div id="chartContainer"></div>
+    </div>
+
+    <div class="brand-badge">
+        <img class="brand-watermark" src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo">
+    </div>
+
+    <script type="text/javascript">
+        var GROUP_ID = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+        var requestHeaders = {
+            Accept: "q=0.8;application/json;q=0.9",
+            "Content-Type": "application/json"
+        };
+
+        (function initializeCsrfToken() {
+            var match = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+            if (match) {
+                requestHeaders["SCOM-CSRF-TOKEN"] = decodeURIComponent(match[1]);
+            }
+        })();
+
+        function setMessage(text, isError) {
+            $("#message").toggleClass("is-error", !!isError).text(text || "");
+        }
+
+        function pad2(v) {
+            return (v < 10 ? "0" : "") + v;
+        }
+
+        function formatHuman(d) {
+            return pad2(d.getDate()) + "." + pad2(d.getMonth() + 1) + "." + d.getFullYear();
+        }
+
+        function parseScomDate(value) {
+            if (!value) return null;
+            if (typeof value === "string") {
+                var match = value.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//);
+                if (match) {
+                    var ms = parseInt(match[1], 10);
+                    if (!isNaN(ms)) return new Date(ms);
+                }
+            }
+            var d = new Date(value);
+            return isNaN(d.getTime()) ? null : d;
+        }
+
+        function getAlertDate(alert) {
+            var fields = [
+                "timegenerated", "timeGenerated",
+                "timeraised", "timeRaised",
+                "timeadded", "timeAdded",
+                "timecreated", "timeCreated",
+                "lastModified", "lastmodified"
+            ];
+
+            for (var i = 0; i < fields.length; i++) {
+                var raw = alert[fields[i]];
+                if (raw != null && raw !== "") {
+                    var parsed = parseScomDate(raw);
+                    if (parsed) return parsed;
+                }
+            }
+            return null;
+        }
+
+        function normalizeSeverity(sev) {
+            var s = String(sev == null ? "" : sev).trim().toLowerCase();
+            if (s === "2" || s === "error" || s === "critical") return "Critical";
+            if (s === "1" || s === "warning") return "Warning";
+            if (s === "0" || s === "information" || s === "info") return "Information";
+            return null;
+        }
+
+        function updateSummary(startDate, endDate, totalAlerts) {
+            $("#summary").text(
+                "Group: Demo Windows Computers | Range: " +
+                formatHuman(startDate) + " - " + formatHuman(endDate) +
+                " | Alerts in range: " + totalAlerts
+            );
+        }
+
+        function buildBuckets(startDate, days) {
+            var categories = [];
+            var indexMap = {};
+            for (var i = 0; i < days; i++) {
+                var d = new Date(startDate.getTime());
+                d.setDate(startDate.getDate() + i);
+                var key = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+                indexMap[key] = i;
+                categories.push(pad2(d.getDate()) + "." + pad2(d.getMonth() + 1));
+            }
+            return { categories: categories, indexMap: indexMap };
+        }
+
+        function renderChart(categories, criticalData, warningData, informationData) {
+            Highcharts.chart("chartContainer", {
+                chart: {
+                    type: "areaspline",
+                    backgroundColor: "#ffffff",
+                    spacingTop: 18,
+                    spacingRight: 18,
+                    spacingBottom: 18,
+                    spacingLeft: 18
+                },
+                title: {
+                    text: "Open Alerts Trend"
+                },
+                xAxis: {
+                    categories: categories,
+                    tickmarkPlacement: "on",
+                    title: { text: "Day" }
+                },
+                yAxis: {
+                    title: { text: "Number of alerts" },
+                    allowDecimals: false,
+                    min: 0
+                },
+                tooltip: {
+                    shared: true,
+                    valueSuffix: " alert(s)"
+                },
+                legend: {
+                    enabled: true
+                },
+                plotOptions: {
+                    areaspline: {
+                        fillOpacity: 0.14,
+                        lineWidth: 3,
+                        marker: {
+                            enabled: true,
+                            radius: 3
+                        }
+                    }
+                },
+                series: [
+                    {
+                        name: "Critical",
+                        data: criticalData,
+                        color: "#dc2626"
+                    },
+                    {
+                        name: "Warning",
+                        data: warningData,
+                        color: "#f59e0b"
+                    },
+                    {
+                        name: "Information",
+                        data: informationData,
+                        color: "#0284c7"
+                    }
+                ],
+                exporting: { enabled: true },
+                credits: { enabled: true }
+            });
+        }
+
+        function loadData() {
+            var days = parseInt($("#daysSelect").val(), 10) || 7;
+            var now = new Date();
+            var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            endDate.setDate(endDate.getDate() + 1);
+            var startDate = new Date(endDate.getTime());
+            startDate.setDate(endDate.getDate() - days);
+
+            $("#refreshBtn").prop("disabled", true).text("Loading...");
+            setMessage("Loading alert trend data...", false);
+
+            $.ajax({
+                url: "/OperationsManager/data/alert",
+                type: "POST",
+                headers: requestHeaders,
+                contentType: "application/json; charset=utf-8",
+                dataType: "json",
+                processData: false,
+                data: JSON.stringify({
+                    classId: null,
+                    objectIds: { [GROUP_ID]: -1 },
+                    criteria: "((Severity = '0') OR (Severity = '1') OR (Severity = '2') OR (Severity = '3')) AND ((Priority = '2') OR (Priority = '1') OR (Priority = '0')) AND ((ResolutionState = '0') OR (ResolutionState = '247') OR (ResolutionState = '248') OR (ResolutionState = '249') OR (ResolutionState = '250') OR (ResolutionState = '254') OR (ResolutionState = '255'))",
+                    displayColumns: [
+                        "severity",
+                        "timegenerated",
+                        "timeGenerated",
+                        "timeraised",
+                        "timeRaised",
+                        "timeadded",
+                        "timeAdded",
+                        "timecreated",
+                        "timeCreated",
+                        "lastModified",
+                        "name"
+                    ]
+                }),
+                success: function (result) {
+                    var buckets = buildBuckets(startDate, days);
+                    var criticalData = new Array(days).fill(0);
+                    var warningData = new Array(days).fill(0);
+                    var informationData = new Array(days).fill(0);
+                    var totalAlerts = 0;
+
+                    (result.rows || []).forEach(function (row) {
+                        var sev = normalizeSeverity(row.severity);
+                        if (!sev) return;
+
+                        var d = getAlertDate(row);
+                        if (!d) return;
+
+                        var key = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+                        var idx = buckets.indexMap[key];
+                        if (idx == null) return;
+
+                        totalAlerts++;
+                        if (sev === "Critical") criticalData[idx]++;
+                        if (sev === "Warning") warningData[idx]++;
+                        if (sev === "Information") informationData[idx]++;
+                    });
+
+                    if (totalAlerts === 0) {
+                        $("#chartContainer").html("<div style='padding:24px;color:#64748b;font-family:Segoe UI, Arial, sans-serif;'>No alerts found in the selected time range.</div>");
+                        updateSummary(startDate, new Date(endDate.getTime() - 86400000), 0);
+                        setMessage("No alerts found in the selected time range.", false);
+                    } else {
+                        renderChart(buckets.categories, criticalData, warningData, informationData);
+                        updateSummary(startDate, new Date(endDate.getTime() - 86400000), totalAlerts);
+                        setMessage("Trend loaded successfully.", false);
+                    }
+                },
+                error: function (xhr, status, err) {
+                    console.error("AJAX error:", status, err);
+                    $("#chartContainer").html("<div style='padding:24px;color:#b00020;font-family:Segoe UI, Arial, sans-serif;'>Failed to load alert trend data.</div>");
+                    setMessage("Failed to load alert trend data.", true);
+                },
+                complete: function () {
+                    $("#refreshBtn").prop("disabled", false).text("Refresh");
+                }
+            });
+        }
+
+        $(function () {
+            $("#daysSelect").val("7");
+            $("#daysSelect").on("change", loadData);
+            $("#refreshBtn").on("click", loadData);
+            loadData();
+        });
+    </script>
+</body>
+</html>

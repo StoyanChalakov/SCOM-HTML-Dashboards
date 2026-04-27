@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SCOM SQL Engine State Widget</title>
+    <script src="/dashboardlibs/jquery.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: #fff;
+        }
+
+        .dashboard-stage {
+            position: relative;
+            min-height: 640px;
+        }
+
+        .grid {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .brand-badge {
+            position: fixed;
+            right: 30px;
+            bottom: 26px;
+            z-index: 1;
+            padding: 14px 18px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(203, 213, 225, 0.9);
+            box-shadow: 0 18px 38px rgba(15, 23, 42, 0.16);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .brand-watermark {
+            display: block;
+            width: min(320px, 28vw);
+            max-width: 360px;
+            opacity: 1;
+            filter: saturate(1.08) contrast(1.04);
+        }
+
+        .tile {
+            flex: 0 1 220px;
+            min-height: 86px;
+            padding: 14px 12px;
+            border-radius: 8px;
+            color: #fff;
+            text-align: center;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .tile.has-alerts {
+            flex: 0 1 450px;
+            align-items: stretch;
+            text-align: left;
+        }
+
+        .tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .st-critical {
+            background: #d9534f;
+            border-bottom: 3px solid #a3201c;
+        }
+
+        .st-warning {
+            background: #f0ad4e;
+            border-bottom: 3px solid #bd7b1e;
+        }
+
+        .st-healthy {
+            background: #5cb85c;
+            border-bottom: 3px solid #367c36;
+        }
+
+        .st-unmonitored {
+            background: #6c757d;
+            border-bottom: 3px solid #484e53;
+        }
+
+        .st-unknown {
+            background: #777;
+            border-bottom: 3px solid #555;
+        }
+
+        .obj-name {
+            font-weight: bold;
+            font-size: 15px;
+            margin-bottom: 6px;
+            word-wrap: break-word;
+            line-height: 1.2;
+        }
+
+        .tile-header {
+            text-align: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+        }
+
+        .header-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .alert-count {
+            font-size: 0.8em;
+            opacity: 0.95;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.20);
+            white-space: nowrap;
+        }
+
+        .obj-path {
+            font-size: 12px;
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
+        }
+
+        .alerts-section {
+            margin-top: 10px;
+        }
+
+        .alert-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 10px;
+            margin: 6px 0;
+            border-radius: 4px;
+            font-size: 0.9em;
+            border-left: 3px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .alert-item.alert-critical {
+            border-left-color: #c9302c;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .alert-item.alert-warning {
+            border-left-color: #ec971f;
+        }
+
+        .alert-name {
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+
+        .alert-severity {
+            font-size: 0.85em;
+            opacity: 0.95;
+        }
+
+        .alert-meta {
+            font-size: 0.8em;
+            opacity: 0.9;
+            margin-top: 6px;
+            line-height: 1.45;
+        }
+
+        .alert-meta-item {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        #status-bar {
+            font-size: 11px;
+            color: #777;
+            padding: 5px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: right;
+        }
+
+        @media (max-width: 900px) {
+            .brand-badge {
+                right: 18px;
+                bottom: 18px;
+                padding: 10px 12px;
+                border-radius: 14px;
+            }
+
+            .brand-watermark {
+                width: min(220px, 42vw);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="status-bar">
+        <span id="status-text">Initializing...</span>
+    </div>
+    <div class="dashboard-stage">
+        <div id="tiles" class="grid"></div>
+    </div>
+    <div class="brand-badge">
+        <img class="brand-watermark" src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo">
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var groupId = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+            var parentClass = "System.Library!System.Computer";
+            var engineClass = "8def7ccc-ca28-c7ef-796f-644160e0b22a";
+            var refreshIntervalSeconds = 60;
+            var lastRenderTime = 0;
+
+            function updateStatus(msg) {
+                $('#status-text').html(msg);
+            }
+
+            function escapeHtml(s) {
+                return String(s == null ? "" : s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function normalizeSeverity(sev) {
+                var s = String(sev == null ? "" : sev).trim().toLowerCase();
+                if (s === "2") return "error";
+                if (s === "1") return "warning";
+                if (s === "0") return "information";
+                if (s === "error" || s === "critical") return "error";
+                if (s === "warning") return "warning";
+                if (s === "information" || s === "info") return "information";
+                return "warning";
+            }
+
+            function parseScomDate(v) {
+                if (!v) return null;
+                if (typeof v === "string") {
+                    var m = v.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//);
+                    if (m) {
+                        var ms = parseInt(m[1], 10);
+                        if (!isNaN(ms)) return new Date(ms);
+                    }
+                }
+                var d = new Date(v);
+                return isNaN(d.getTime()) ? null : d;
+            }
+
+            function formatDateTime(d) {
+                if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+                var day = String(d.getDate()).padStart(2, "0");
+                var month = String(d.getMonth() + 1).padStart(2, "0");
+                var year = d.getFullYear();
+                var hours = String(d.getHours()).padStart(2, "0");
+                var minutes = String(d.getMinutes()).padStart(2, "0");
+                return day + "." + month + "." + year + " " + hours + ":" + minutes;
+            }
+
+            function formatAgeFromMs(ms) {
+                if (ms == null || isNaN(ms) || ms < 0) return null;
+                var sec = Math.floor(ms / 1000);
+                var min = Math.floor(sec / 60);
+                var hr = Math.floor(min / 60);
+                var day = Math.floor(hr / 24);
+
+                if (day > 0) return day + "d " + (hr % 24) + "h";
+                if (hr > 0) return hr + "h " + (min % 60) + "m";
+                if (min > 0) return min + "m";
+                return sec + "s";
+            }
+
+            function pickFirstField(obj, fields) {
+                for (var i = 0; i < fields.length; i++) {
+                    var f = fields[i];
+                    if (obj && obj[f] != null && obj[f] !== "") return obj[f];
+                }
+                return null;
+            }
+
+            function getAlertGeneratedTime(alert) {
+                var v = pickFirstField(alert, [
+                    "timeadded", "timeAdded",
+                    "timeraised", "timeRaised",
+                    "timegenerated", "timeGenerated",
+                    "timecreated", "timeCreated",
+                    "lastModified", "lastmodified"
+                ]);
+                var d = parseScomDate(v);
+                return d ? formatDateTime(d) : null;
+            }
+
+            function getAlertAge(alert) {
+                var a = pickFirstField(alert, ["age", "Age"]);
+                if (a != null) {
+                    if (typeof a === "string") return a;
+                    var ad = parseScomDate(a);
+                    if (ad) return formatAgeFromMs(Date.now() - ad.getTime());
+                }
+
+                var v = pickFirstField(alert, [
+                    "timeadded", "timeAdded",
+                    "timeraised", "timeRaised",
+                    "timegenerated", "timeGenerated",
+                    "timecreated", "timeCreated",
+                    "lastModified", "lastmodified"
+                ]);
+                var d = parseScomDate(v);
+                return d ? formatAgeFromMs(Date.now() - d.getTime()) : null;
+            }
+
+            function getAlertSource(alert) {
+                var v = pickFirstField(alert, [
+                    "alertsource", "alertSource",
+                    "source", "sourceName",
+                    "monitoringsource", "monitoringSource",
+                    "sourcename", "origin"
+                ]);
+
+                if (v && String(v).toLowerCase() !== "monitor") return v;
+
+                if (alert.monitoringobjectdisplayname && alert.monitoringobjectdisplayname !== alert.name) {
+                    return alert.monitoringobjectdisplayname;
+                }
+                return null;
+            }
+
+            function dedupeAlerts(alerts) {
+                var seen = {};
+                var out = [];
+                (alerts || []).forEach(function (a) {
+                    var key = (a.id != null) ? ("id:" + a.id) : ("k:" + a.name + "|" + a.severity + "|" + a.monitoringobjectdisplayname + "|" + a.timeadded + "|" + a.timeraised);
+                    if (seen[key]) return;
+                    seen[key] = true;
+                    out.push(a);
+                });
+                return out;
+            }
+
+            function extractFqdnLike(text) {
+                var t = String(text || "");
+                var m = t.match(/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/);
+                return m ? m[1] : null;
+            }
+
+            function getHeaders() {
+                var headers = { "Accept": "q=0.8;application/json;q=0.9", "Content-Type": "application/json" };
+                var m = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+                if (m) headers["SCOM-CSRF-TOKEN"] = decodeURIComponent(m[1]);
+                return headers;
+            }
+
+            function api(url, method, data) {
+                return new Promise(function (resolve, reject) {
+                    $.ajax({
+                        url: "/OperationsManager" + url,
+                        type: method,
+                        headers: getHeaders(),
+                        data: data ? JSON.stringify(data) : null,
+                        success: resolve,
+                        error: reject
+                    });
+                });
+            }
+
+            async function loadData() {
+                if (Date.now() - lastRenderTime < 5000) return;
+
+                try {
+                    var parentsResult = await api("/data/state", "POST", {
+                        classId: parentClass,
+                        objectIds: { [groupId]: -1 },
+                        displayColumns: ["id", "displayname"]
+                    });
+                    var parents = parentsResult.rows || [];
+
+                    if (parents.length === 0) {
+                        updateStatus("Group is empty (0 computers).");
+                        $('#tiles').empty();
+                        return;
+                    }
+
+                    var targetsResult = await api("/data/state", "POST", {
+                        classId: engineClass,
+                        displayColumns: ["healthstate", "displayname", "path", "id"]
+                    });
+                    var allTargets = targetsResult.rows || [];
+                    var targetMap = {};
+                    allTargets.forEach(function (row) {
+                        if (row.id) targetMap[row.id.trim().toLowerCase()] = row;
+                    });
+
+                    var finalEngineIds = new Set();
+                    var parentPromises = parents.map(function (p) {
+                        return api("/data/objectInformation/" + p.id, "GET")
+                            .then(function (res) {
+                                var children = res.relatedObjects || res.RelatedObjects || [];
+                                children.forEach(function (child) {
+                                    var cid = child.id || child.Id;
+                                    if (cid) {
+                                        var normId = cid.trim().toLowerCase();
+                                        if (targetMap[normId]) finalEngineIds.add(normId);
+                                    }
+                                });
+                            })
+                            .catch(function () { console.warn("Failed parent check: " + p.displayname); });
+                    });
+
+                    await Promise.all(parentPromises);
+
+                    var enginesToRender = [];
+                    finalEngineIds.forEach(function (id) { enginesToRender.push(targetMap[id]); });
+
+                    if (enginesToRender.length === 0) {
+                        $('#tiles').empty();
+                        updateStatus(
+                            "Computers: " + parents.length +
+                            " | Engines: 0 | Updated: " + new Date().toLocaleTimeString()
+                        );
+                        lastRenderTime = Date.now();
+                        return;
+                    }
+
+                    await loadAlertsForObjects(enginesToRender);
+
+                    var alertedCount = 0;
+                    enginesToRender.forEach(function (row) {
+                        if (row._alerts && row._alerts.length) alertedCount++;
+                    });
+
+                    updateStatus(
+                        "Computers: " + parents.length +
+                        " | Engines: " + enginesToRender.length +
+                        " | Alerted: " + alertedCount +
+                        " | Updated: " + new Date().toLocaleTimeString()
+                    );
+                    lastRenderTime = Date.now();
+                } catch (e) {
+                    console.error(e);
+                    updateStatus("<span style='color:red'>Update failed.</span>");
+                }
+            }
+
+            function loadAlertsForObjects(rows) {
+                if (!rows || rows.length === 0) {
+                    renderTiles([]);
+                    return Promise.resolve();
+                }
+
+                var objectIds = {};
+                rows.forEach(function (row) {
+                    if (row && row.id) objectIds[row.id] = -1;
+                });
+
+                return api("/data/alert", "POST", {
+                    classId: null,
+                    objectIds: objectIds,
+                    criteria: "((Severity = '2') OR (Severity = '1')) AND (ResolutionState = '0')",
+                    displayColumns: [
+                        "id",
+                        "severity",
+                        "name",
+                        "monitoringobjectdisplayname",
+                        "monitoringobjectpath",
+                        "monitoringobjectid",
+                        "description",
+                        "principalname",
+                        "age",
+                        "timeadded",
+                        "lastModified",
+                        "timeraised",
+                        "timegenerated",
+                        "timecreated",
+                        "alertsource",
+                        "source",
+                        "monitoringsource"
+                    ]
+                }).then(function (alertResult) {
+                    var alertsByObjectId = {};
+                    var alertsByObjectName = {};
+                    var alertRows = alertResult.rows || [];
+
+                    alertRows.forEach(function (alert) {
+                        if (alert.monitoringobjectid) {
+                            if (!alertsByObjectId[alert.monitoringobjectid]) alertsByObjectId[alert.monitoringobjectid] = [];
+                            alertsByObjectId[alert.monitoringobjectid].push(alert);
+                        }
+
+                        if (alert.monitoringobjectdisplayname) {
+                            if (!alertsByObjectName[alert.monitoringobjectdisplayname]) alertsByObjectName[alert.monitoringobjectdisplayname] = [];
+                            alertsByObjectName[alert.monitoringobjectdisplayname].push(alert);
+                        }
+
+                        if (alert.monitoringobjectpath) {
+                            var fqdn = extractFqdnLike(alert.monitoringobjectpath);
+                            if (fqdn) {
+                                if (!alertsByObjectName[fqdn]) alertsByObjectName[fqdn] = [];
+                                alertsByObjectName[fqdn].push(alert);
+                            }
+                        }
+                    });
+
+                    rows.forEach(function (row) {
+                        var alerts = alertsByObjectId[row.id] || [];
+                        if (alerts.length === 0 && row.displayname) alerts = alertsByObjectName[row.displayname] || [];
+                        if (alerts.length === 0 && row.path) {
+                            var fqdn = extractFqdnLike(row.path);
+                            if (fqdn) alerts = alertsByObjectName[fqdn] || [];
+                        }
+                        row._alerts = dedupeAlerts(alerts);
+                    });
+
+                    renderTiles(rows);
+                }).catch(function () {
+                    rows.forEach(function (row) { row._alerts = []; });
+                    renderTiles(rows);
+                });
+            }
+
+            function renderTiles(rows) {
+                var $grid = $('#tiles').empty();
+                var w = { "critical": 0, "3": 0, "warning": 1, "2": 1, "healthy": 2, "success": 2, "1": 2, "unmonitored": 3, "0": 3, "unknown": 4 };
+
+                rows.sort(function (a, b) {
+                    return (w[String(a.healthstate).toLowerCase()] || 99) - (w[String(b.healthstate).toLowerCase()] || 99);
+                });
+
+                rows.forEach(function (row) {
+                    var s = String(row.healthstate).toLowerCase();
+                    var css = "st-unknown";
+                    if (s === '3' || s === 'critical') css = 'st-critical';
+                    else if (s === '2' || s === 'warning') css = 'st-warning';
+                    else if (s === '1' || s === 'healthy' || s === 'success') css = 'st-healthy';
+                    else if (s === '0' || s === 'unmonitored') css = 'st-unmonitored';
+
+                    var alerts = dedupeAlerts(row._alerts || []);
+                    var hasAlerts = alerts.length > 0;
+
+                    var $t = $('<div>').addClass('tile ' + css + (hasAlerts ? ' has-alerts' : '')).on('click', function () {
+                        window.open('/OperationsManager/#/monitoring/drilldown/object/' + row.id);
+                    });
+
+                    var html = '<div class="tile-header">';
+                    html += '<div class="header-row">';
+                    html += '<span class="obj-name">' + escapeHtml(row.displayname || "Unknown object") + '</span>';
+                    if (hasAlerts) {
+                        html += '<span class="alert-count">' + alerts.length + ' Alert(s)</span>';
+                    }
+                    html += '</div>';
+                    html += '<span class="obj-path">' + escapeHtml(row.path || '') + '</span>';
+                    html += '</div>';
+
+                    if (hasAlerts) {
+                        html += '<div class="alerts-section">';
+                        alerts.forEach(function (alert) {
+                            var sev = normalizeSeverity(alert.severity);
+                            var isCritical = (sev === "error");
+                            var severityClass = isCritical ? 'alert-critical' : 'alert-warning';
+                            var severityText = isCritical ? 'Error' : 'Warning';
+                            var alertTime = getAlertGeneratedTime(alert);
+                            var alertAge = getAlertAge(alert);
+                            var alertSource = getAlertSource(alert);
+
+                            html += '<div class="alert-item ' + severityClass + '">';
+                            html += '<div class="alert-name">' + escapeHtml(alert.name || 'Unknown alert') + '</div>';
+                            html += '<div class="alert-severity">' + severityText + '</div>';
+
+                            if (alertTime || alertAge || alertSource) {
+                                html += '<div class="alert-meta">';
+                                if (alertTime) html += '<span class="alert-meta-item">Time: ' + escapeHtml(alertTime) + '</span>';
+                                if (alertAge) html += '<span class="alert-meta-item">Age: ' + escapeHtml(alertAge) + '</span>';
+                                if (alertSource) html += '<span class="alert-meta-item">Source: ' + escapeHtml(alertSource) + '</span>';
+                                html += '</div>';
+                            }
+
+                            html += '</div>';
+                        });
+                        html += '</div>';
+                    }
+
+                    $t.html(html);
+                    $grid.append($t);
+                });
+            }
+
+            $(document).ready(function () {
+                loadData();
+                if (refreshIntervalSeconds > 0) setInterval(loadData, refreshIntervalSeconds * 1000);
+            });
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Alerts Share Per Severity</title>
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/highcharts.js"></script>
+    <script src="/dashboardlibs/highcharts-3d.js"></script>
+    <script src="/dashboardlibs/modules/exporting.js"></script>
+    <style>
+        :root { --ui-font:"Segoe UI",Arial,sans-serif; --bg:#0f172a; --panel:#111827; --panel-2:#0b1220; --border:#23324a; --text:#e5eefc; --muted:#94a3b8; --primary:#3b82f6; --primary-dark:#2563eb; }
+        body { margin:0; padding:10px; background:var(--bg); color:var(--text); font-family:var(--ui-font); }
+        .widget-shell { position:relative; min-height:460px; }
+        .controls { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px; background:linear-gradient(180deg,#172033 0%,#101827 100%); border:1px solid var(--border); border-radius:14px; box-shadow:0 14px 32px rgba(2,6,23,0.45); flex-wrap:wrap; }
+        .controls-left { display:flex; flex-direction:column; gap:4px; min-width:260px; }
+        .controls-left .title { font-size:18px; font-weight:700; line-height:1.2; }
+        .controls-left .summary { font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:760px; }
+        .controls-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        button { height:34px; font-size:13px; font-family:var(--ui-font); border-radius:10px; border:1px solid #334155; background:#0f172a; color:var(--text); padding:0 12px; box-sizing:border-box; cursor:pointer; box-shadow:0 1px 2px rgba(15,23,42,0.25); }
+        button.primary { background:var(--primary); color:#fff; border-color:var(--primary); font-weight:600; }
+        button.primary:hover { background:var(--primary-dark); }
+        #message { margin-bottom:10px; padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:12px; color:var(--muted); font-size:13px; }
+        #message.is-error { color:#fda4af; border-color:#7f1d1d; }
+        #container { position:relative; z-index:2; height:380px; width:100%; background:linear-gradient(180deg,#121b2d 0%,#0b1220 100%); border:1px solid var(--border); border-radius:16px; box-shadow:0 18px 34px rgba(2,6,23,0.45); overflow:hidden; }
+        .brand-badge { position:fixed; right:30px; bottom:26px; z-index:1; padding:10px 12px; border-radius:14px; background:rgba(15,23,42,0.88); border:1px solid rgba(71,85,105,0.9); box-shadow:0 14px 28px rgba(2,6,23,0.35); pointer-events:none; user-select:none; }
+        .brand-watermark { display:block; width:min(220px,18vw); max-width:240px; opacity:.96; filter:saturate(1.06) contrast(1.02); }
+        @media (max-width:900px){ .controls{align-items:flex-start;} .controls-right{width:100%; justify-content:flex-start;} .brand-badge{right:18px; bottom:18px; padding:8px 10px; border-radius:12px;} .brand-watermark{width:min(160px,34vw);} }
+    </style>
+</head>
+<body>
+    <div class="widget-shell">
+        <div class="controls">
+            <div class="controls-left">
+                <div class="title">Alerts Share Per Severity</div>
+                <div id="summary" class="summary">Initializing...</div>
+            </div>
+            <div class="controls-right">
+                <button id="refreshBtn" class="primary" type="button">Refresh</button>
+            </div>
+        </div>
+        <div id="message">Ready.</div>
+        <div id="container"></div>
+    </div>
+    <div class="brand-badge">
+        <img class="brand-watermark" src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo">
+    </div>
+
+    <script type="text/javascript">
+        var GROUP_ID = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+        var criticalCounter = 0, informationCounter = 0, warningCounter = 0;
+        var requestHeaders = { Accept:"q=0.8;application/json;q=0.9", "Content-Type":"application/json" };
+        (function(){ var cookies=document.cookie.split("; "); var result={}; for(var i=0;i<cookies.length;i++){ var cur=cookies[i].split("="); result[cur[0]]=cur[1]; } if(result["SCOM-CSRF-TOKEN"]){ requestHeaders["SCOM-CSRF-TOKEN"]=decodeURIComponent(result["SCOM-CSRF-TOKEN"]); } })();
+        function setMessage(text,isError){ $("#message").toggleClass("is-error",!!isError).text(text||""); }
+        function resetCounters(){ criticalCounter=0; informationCounter=0; warningCounter=0; }
+        function updateSummary(total){ $("#summary").text("Group: Demo Windows Computers | Alerts in scope: "+total); }
+        function renderChart(){
+            var total = criticalCounter + warningCounter + informationCounter;
+            updateSummary(total);
+            if(total===0){
+                $("#container").html("<div style='padding:24px;color:#94a3b8;font-family:Segoe UI, Arial, sans-serif;'>No alerts found.</div>");
+                setMessage("No alerts found in the selected scope.", false);
+                return;
+            }
+            Highcharts.chart("container",{
+                chart:{ type:"pie", backgroundColor:"#101827", options3d:{ enabled:true, alpha:45, beta:0 }, style:{ fontFamily:"Segoe UI, Arial, sans-serif" } },
+                title:{ text:"Alerts Share Per Severity", style:{ color:"#e5eefc", fontWeight:"700" } },
+                tooltip:{ pointFormat:"{series.name}: <b>{point.percentage:.1f}%</b>", backgroundColor:"rgba(15,23,42,0.95)", borderColor:"#334155", style:{ color:"#e5eefc" } },
+                plotOptions:{ pie:{ allowPointSelect:true, cursor:"pointer", depth:35, borderWidth:0, dataLabels:{ enabled:true, format:"{point.name}", color:"#f8fafc", connectorColor:"#94a3b8", style:{ color:"#f8fafc", textOutline:"none", fontWeight:"600" } }, showInLegend:true } },
+                legend:{ enabled:true, itemStyle:{ color:"#dbeafe" }, itemHoverStyle:{ color:"#ffffff" } },
+                series:[{ type:"pie", name:"Alerts share", data:[ { name:"Critical", y:criticalCounter, sliced:criticalCounter>0, selected:criticalCounter>0, color:"#ef4444" }, { name:"Warning", y:warningCounter, color:"#f59e0b" }, { name:"Information", y:informationCounter, color:"#38bdf8" } ] }],
+                exporting:{ enabled:true },
+                credits:{ enabled:true, style:{ color:"#64748b" } }
+            });
+            setMessage("Alert distribution loaded successfully.", false);
+        }
+        function loadData(){
+            resetCounters();
+            $("#refreshBtn").prop("disabled",true).text("Loading...");
+            setMessage("Loading alert distribution...", false);
+            $.ajax({
+                url:"/OperationsManager/data/alert",
+                type:"POST",
+                headers:requestHeaders,
+                contentType:"application/json; charset=utf-8",
+                dataType:"json",
+                processData:false,
+                data:JSON.stringify({
+                    classId:null,
+                    objectIds:{ [GROUP_ID]:-1 },
+                    criteria:"((Severity = '0') OR (Severity = '1') OR (Severity = '2') OR (Severity = '3')) AND ((Priority = '2') OR (Priority = '1') OR (Priority = '0')) AND ((ResolutionState = '0') OR (ResolutionState = '247') OR (ResolutionState = '248') OR (ResolutionState = '249') OR (ResolutionState = '250') OR (ResolutionState = '254') OR (ResolutionState = '255'))",
+                    displayColumns:["severity","monitoringobjectdisplayname","name","age","repeatcount","lastModified"]
+                }),
+                success:function(result){
+                    for(var i=0;i<(result.rows||[]).length;i++){
+                        switch(result.rows[i].severity){
+                            case "Error": criticalCounter++; break;
+                            case "Information": informationCounter++; break;
+                            case "Warning": warningCounter++; break;
+                        }
+                    }
+                    renderChart();
+                },
+                error:function(){
+                    $("#container").html("<div style='padding:24px;color:#fda4af;font-family:Segoe UI, Arial, sans-serif;'>Failed to load alert data.</div>");
+                    updateSummary(0);
+                    setMessage("Failed to load alert distribution.", true);
+                },
+                complete:function(){ $("#refreshBtn").prop("disabled",false).text("Refresh"); }
+            });
+        }
+        $(function(){ $("#refreshBtn").on("click", loadData); loadData(); });
+    </script>
+</body>
+</html>

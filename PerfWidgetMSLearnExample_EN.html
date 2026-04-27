@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SCOM Performance Dashboard - Mini Spline Charts per Server</title>
+
+    <!-- jQuery & CanvasJS (local environment) -->
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/canvasjs.min.js"></script>
+
+    <style>
+        body{
+            font-family:"Segoe UI","Segoe UI Variable",Arial,sans-serif;
+            margin:0;
+            padding:1.1rem;
+            background:#f3f6fb;
+            color:#0f172a;
+        }
+        #controls{
+            margin-bottom:1rem;
+            padding:1rem 1.1rem;
+            background:#ffffff;
+            border:1px solid #dbe3ee;
+            border-radius:16px;
+            box-shadow:0 8px 24px rgba(15,23,42,0.06);
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            gap:.75rem .9rem;
+        }
+        #controls label{
+            font-size:13px;
+            font-weight:600;
+            color:#334155;
+        }
+        #controls select,
+        #controls input,
+        #controls button{
+            font-family:inherit;
+            font-size:14px;
+            vertical-align:middle;
+        }
+        #controls select,
+        #controls input{
+            height:38px;
+            padding:0 .7rem;
+            border:1px solid #cbd5e1;
+            border-radius:10px;
+            background:#fff;
+            color:#0f172a;
+            box-sizing:border-box;
+        }
+        #controls button{
+            height:38px;
+            padding:0 .9rem;
+            border:1px solid #cbd5e1;
+            border-radius:10px;
+            background:#fff;
+            color:#0f172a;
+            cursor:pointer;
+            box-shadow:0 1px 2px rgba(15,23,42,0.04);
+        }
+        #controls button:hover{
+            background:#f8fafc;
+        }
+        #groupSelect{
+            min-width:420px;
+        }
+        .control-group{
+            display:flex;
+            align-items:center;
+            gap:.55rem;
+            flex-wrap:wrap;
+        }
+        #dashboard{
+            margin-top:.85rem;
+        }
+        .server-row{
+            display:grid;
+            grid-template-columns:minmax(120px,180px) repeat(4,minmax(220px,1fr));
+            gap:1rem 1.25rem;
+            align-items:center;
+            background:#fff;
+            padding:1rem 1.1rem;
+            border-radius:18px;
+            border:1px solid #dbe3ee;
+            margin-bottom:.85rem;
+            box-shadow:0 10px 28px rgba(15,23,42,0.05);
+        }
+        .srv-name{
+            font-weight:600;
+            font-size:1.15rem;
+            color:#0f172a;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+        .box{
+            text-align:center;
+            padding:.65rem .45rem;
+        }
+        .label{
+            font-weight:600;
+            font-size:1rem;
+            letter-spacing:.01em;
+            margin-bottom:6px;
+            color:#0f172a;
+        }
+        .value{
+            font-size:2rem;
+            font-weight:600;
+            line-height:1.1;
+            margin-bottom:10px;
+            color:#111827;
+        }
+        .miniChart{
+            height:150px;
+            width:100%;
+            max-width:240px;
+            margin:0 auto;
+        }
+        @media (max-width: 1400px){
+            .server-row{
+                grid-template-columns:minmax(120px,180px) repeat(2,minmax(220px,1fr));
+            }
+        }
+        @media (max-width: 900px){
+            #groupSelect{
+                min-width:280px;
+            }
+            .server-row{
+                grid-template-columns:1fr;
+            }
+            .srv-name{
+                margin-bottom:.25rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- ==== Control panel ==== -->
+    <div id="controls">
+        <div class="control-group">
+            <label for="groupSelect">Group:</label>
+            <select id="groupSelect"></select>
+            <button id="reloadGroupsBtn" type="button">Reload Groups</button>
+        </div>
+
+        <label for="daysSelect">Time Range (Days):</label>
+        <select id="daysSelect"></select>
+
+        <label for="startDateTimeSelect">Start Date + Time:</label>
+        <input type="datetime-local" id="startDateTimeSelect">
+
+        <label for="endDateTimeSelect">End Date + Time:</label>
+        <input type="datetime-local" id="endDateTimeSelect">
+
+        <button id="refreshBtn" type="button">Refresh</button>
+    </div>
+
+    <!-- ==== Dashboard - one row per server (mini charts) ==== -->
+    <div id="dashboard"></div>
+
+    <script type="text/javascript">
+        /* -------------------------------------------------------------- 0) CSRF token & Request-Header -------------------------------------------------------------- */
+        var requestHeaders = {
+            Accept: "q=0.8;application/json;q=0.9",
+            "Content-Type": "application/json"
+        };
+        (function () {
+            var m = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+            if (m) requestHeaders["SCOM-CSRF-TOKEN"] = decodeURIComponent(m[1]);
+        })();
+
+        /* -------------------------------------------------------------- 1) Helper functions -------------------------------------------------------------- */
+        function pad2(v){ return (v<10?'0':'')+v; }
+        function formatDateTimeLocal(d){
+            var y = d.getFullYear(),
+                m = pad2(d.getMonth()+1),
+                dd= pad2(d.getDate()),
+                h = pad2(d.getHours()),
+                mi= pad2(d.getMinutes());
+            return y+'-'+m+'-'+dd+'T'+h+':'+mi;
+        }
+
+        function getMiniAxisConfig(points){
+            if (!points || points.length < 2){
+                return { intervalType:"hour", interval:12, valueFormatString:"DD.MM HH:mm", labelAngle:-30 };
+            }
+
+            var start = points[0].x;
+            var end = points[points.length-1].x;
+            var hours = Math.max(1, (end - start) / 36e5);
+
+            if (hours <= 3)   return { intervalType:"hour",   interval:1,  valueFormatString:"HH:mm",       labelAngle:-25 };
+            if (hours <= 12)  return { intervalType:"hour",   interval:2,  valueFormatString:"HH:mm",       labelAngle:-25 };
+            if (hours <= 48)  return { intervalType:"hour",   interval:12, valueFormatString:"DD.MM HH:mm", labelAngle:-30 };
+            if (hours <= 120) return { intervalType:"day",    interval:1,  valueFormatString:"DD.MM",       labelAngle:-28 };
+            return             { intervalType:"day",    interval:2,  valueFormatString:"DD.MM",       labelAngle:-28 };
+        }
+
+        function ajaxJson(url, method, data){
+            return $.ajax({
+                url: url,
+                type: method,
+                headers: requestHeaders,
+                contentType: "application/json; charset=utf-8",
+                dataType: "json",
+                processData: false,
+                data: data ? JSON.stringify(data) : null
+            });
+        }
+
+        function extractGroupScope(resp){
+            if (!resp) return [];
+            if (Array.isArray(resp)) return resp;
+            if (Array.isArray(resp.scopeDatas)) return resp.scopeDatas;
+            if (Array.isArray(resp.scopeData)) return resp.scopeData;
+            if (Array.isArray(resp.rows)) return resp.rows;
+            if (Array.isArray(resp.value)) return resp.value;
+            return [];
+        }
+
+        function buildGroupCriteria(){
+            return "DisplayName LIKE '%'";
+        }
+
+        function populateGroupSelect(scope){
+            var groups = extractGroupScope(scope).filter(function(x){ return x && x.id; });
+            groups.sort(function(a,b){
+                var ad = ((a.displayName || a.fullName || a.name || a.id) || "").toLowerCase();
+                var bd = ((b.displayName || b.fullName || b.name || b.id) || "").toLowerCase();
+                return ad<bd?-1:(ad>bd?1:0);
+            });
+
+            var $group = $('#groupSelect').empty();
+            $group.append($('<option>', { value:"", text:"-- Select a group --" }));
+
+            groups.forEach(function(g){
+                var label = g.displayName || g.fullName || g.name || g.id;
+                $group.append($('<option>', { value:g.id, text:label }));
+            });
+
+            $('#groupSelect').prop('disabled', false);
+            return groups;
+        }
+
+        function loadGroups(){
+            var criteria = buildGroupCriteria();
+            $('#groupSelect').prop('disabled', true).empty().append($('<option>', { value:"", text:"Loading groups..." }));
+            $('#reloadGroupsBtn').prop('disabled', true);
+            $('#refreshBtn').prop('disabled', true);
+
+            function tryArray(c){ return ajaxJson("/OperationsManager/data/scomGroups", "POST", [c]); }
+            function tryString(c){
+                return $.ajax({
+                    url: "/OperationsManager/data/scomGroups",
+                    type:"POST",
+                    headers: requestHeaders,
+                    contentType:"application/json; charset=utf-8",
+                    dataType:"json",
+                    data: JSON.stringify(c)
+                });
+            }
+            function tryForm(c){
+                return $.ajax({
+                    url: "/OperationsManager/data/scomGroups",
+                    type:"POST",
+                    headers: requestHeaders,
+                    contentType:"application/x-www-form-urlencoded; charset=UTF-8",
+                    dataType:"json",
+                    data: { criteria:c }
+                });
+            }
+
+            return tryArray(criteria)
+                .catch(function(){ return tryString(criteria); })
+                .catch(function(){ return tryForm(criteria); })
+                .done(function(resp){
+                    var groups = populateGroupSelect(resp);
+                    $('#reloadGroupsBtn').prop('disabled', false);
+                    $('#refreshBtn').prop('disabled', false);
+                    if (groups.length){
+                        $('#groupSelect').val(groups[0].id);
+                        loadAll();
+                    } else {
+                        $('#dashboard').html('<p>No groups returned from SCOM.</p>');
+                    }
+                })
+                .fail(function(xhr){
+                    $('#groupSelect')
+                        .prop('disabled', false)
+                        .empty()
+                        .append($('<option>', { value:"", text:"Failed to load groups (HTTP " + xhr.status + ")" }));
+                    $('#reloadGroupsBtn').prop('disabled', false);
+                    $('#refreshBtn').prop('disabled', false);
+                    $('#dashboard').html('<p style="color:red;">Failed to load groups.</p>');
+                });
+        }
+
+        var hostToFriendly = {
+            // Optional demo mapping:
+            // "server01.demo.local":"Application Server 01",
+            // "server02.demo.local":"Database Server 01"
+        };
+        function getFriendlyName(host){ return host && hostToFriendly[host] ? hostToFriendly[host] : ""; }
+        function shortHost(host){ return host ? host.split(".")[0] : ""; }
+
+        /* -------------------------------------------------------------- 2) UI initialization -------------------------------------------------------------- */
+        $(function () {
+            // Days dropdown (1 ... 90)
+            var $days = $('#daysSelect').empty();
+            for (var d=1; d<=90; d++){
+                $days.append($('<option>',{value:d, text:d+' Day'+(d>1?'s':'')}));
+            }
+            $days.val(3); // Default = 3 days
+
+            // Date picker
+            var $start = $('#startDateTimeSelect'), $end = $('#endDateTimeSelect');
+            function initDates(){
+                var now   = new Date();
+                var start = new Date(now.getTime() - 3*24*60*60*1000);
+                $end.val(formatDateTimeLocal(now));
+                $start.val(formatDateTimeLocal(start));
+            }
+            initDates();
+
+            // Event handlers
+            $('#refreshBtn').on('click', loadAll);
+            $('#groupSelect').on('change', loadAll);
+            $('#reloadGroupsBtn').on('click', loadGroups);
+            $days.on('change', function(){ syncDatesFromDays(); loadAll(); });
+            $start.on('change', function(){ syncDaysFromDates(); loadAll(); });
+            $end.on('change',   function(){ syncDaysFromDates(); loadAll(); });
+
+            // Initial load
+            loadGroups();
+        });
+
+        /* -------------------------------------------------------------- 3) Synchronization: days <-> date -------------------------------------------------------------- */
+        function syncDatesFromDays(){
+            var days = parseInt($('#daysSelect').val(),10);
+            if (isNaN(days)) return;
+            var endStr = $('#endDateTimeSelect').val();
+            var end    = endStr ? new Date(endStr) : new Date();
+            var start  = new Date(end.getTime() - days*24*60*60*1000);
+            $('#startDateTimeSelect').val(formatDateTimeLocal(start));
+            $('#endDateTimeSelect').val(formatDateTimeLocal(end));
+        }
+        function syncDaysFromDates(){
+            var startStr = $('#startDateTimeSelect').val(),
+                endStr   = $('#endDateTimeSelect').val();
+            if (!startStr || !endStr) return;
+            var start = new Date(startStr),
+                end   = new Date(endStr);
+            var diff = Math.round((end-start)/(24*60*60*1000));
+            if (diff>=1 && diff<=90) $('#daysSelect').val(diff);
+            else $('#daysSelect').val('');
+        }
+
+        /* -------------------------------------------------------------- 4) Retrieve data from the SCOM backend -------------------------------------------------------------- */
+        function loadAll(){
+            $('#refreshBtn').prop('disabled',true).text('Loading...');
+            var groupId = $('#groupSelect').val();
+            if (!groupId){
+                $('#refreshBtn').prop('disabled',false).text('Refresh');
+                $('#dashboard').html('<p>Please select a group.</p>');
+                return;
+            }
+
+            // Date fields - fallback if the browser provides no values
+            var startStr = $('#startDateTimeSelect').val(),
+                endStr   = $('#endDateTimeSelect').val(),
+                now      = new Date();
+
+            if (!startStr){
+                var fallback = new Date(now.getTime() - 3*24*60*60*1000);
+                startStr = formatDateTimeLocal(fallback);
+                $('#startDateTimeSelect').val(startStr);
+            }
+            if (!endStr){
+                endStr = formatDateTimeLocal(now);
+                $('#endDateTimeSelect').val(endStr);
+            }
+
+            var startDate   = new Date(startStr);
+            var durationMin = Math.round((now - startDate) / (1000*60));
+            if (isNaN(durationMin) || durationMin<=0) durationMin = 60; // Minimum 1 hour
+
+            // Counter-Definition (CPU, RAM, LogicalDisk % Free)
+            var counters = [
+                {objectname:"Processor Information", countername:"% Processor Time",    instancename:"_Total"},
+                {objectname:"Memory",                countername:"PercentMemoryUsed",  instancename:""},
+                {objectname:"LogicalDisk",           countername:"% Free Space",      instancename:"%"}
+            ];
+
+            var payload = {
+                id: groupId,
+                performanceCounters: counters,
+                legends:["target","path","instance","lastvalue"],
+                duration: durationMin
+            };
+
+            $.ajax({
+                url: "/OperationsManager/data/performance",
+                type: "POST",
+                headers: requestHeaders,
+                contentType: "application/json",
+                data: JSON.stringify(payload),
+                dataType: "json",
+                success: function(res){
+                    renderDashboardRows(res);
+                },
+                error: function(xhr){
+                    console.error("SCOM-API-Error:", xhr);
+                    $('#dashboard').html('<p style="color:red;">Error loading data.</p>');
+                },
+                complete: function(){
+                    $('#refreshBtn').prop('disabled',false).text('Refresh');
+                }
+            });
+        }
+
+        /* -------------------------------------------------------------- 5) Dashboard rows - mini spline charts (with axes) -------------------------------------------------------------- */
+        function renderDashboardRows(res){
+            var $dash = $('#dashboard').empty();
+
+            // 1. Check legends
+            if (!res.legends || !Array.isArray(res.legends.rows)){
+                $dash.html('<p>No server information received.</p>');
+                return;
+            }
+
+            // 2. Data structure: path -> metrics + history
+            var servers = {};
+
+            // Helper: create data points (UTC -> local)
+            function extractPoints(ds){
+                var pts = [];
+                for (var ts in ds.data){
+                    if (!ds.data.hasOwnProperty(ts)) continue;
+                    var utc   = new Date(ts);
+                    var offsetMs = utc.getTimezoneOffset() * 60 * 1000;
+                    var local = new Date(utc.getTime() - offsetMs);
+                    var v = Number(ds.data[ts]);
+                    if (isNaN(v)) continue;
+                    pts.push({x:local, y:v});
+                }
+                pts.sort(function(a,b){return a.x - b.x;});
+                return pts;
+            }
+
+            if (Array.isArray(res.datasets)){
+                for (var i=0;i<res.datasets.length;i++){
+                    var ds = res.datasets[i];
+                    var legend = findLegend(ds, res.legends.rows);
+                    if (!legend) continue;
+
+                    var path = (legend.path || legend.target || "").toLowerCase();
+                    if (!path) continue;
+
+                    if (!servers[path]) servers[path] = {
+                        cpu:null, ram:null, c:null, d:null,
+                        cpuPoints:[], ramPoints:[], cPoints:[], dPoints:[],
+                        _cnt:0
+                    };
+
+                    var points = extractPoints(ds);
+                    var last   = points.length ? points[points.length-1].y : null;
+
+                    // Counter-Typ bestimmen
+                    var cntName = (legend.countername || legend.counter || "").toLowerCase();
+                    var objName = (legend.objectname  || legend.object  || "").toLowerCase();
+                    var inst    = (legend.instance || "").toUpperCase();
+
+                    var type = null;
+                    if (cntName.indexOf("% processor time")!==-1 || objName.indexOf("processor")!==-1){
+                        type = "cpu";
+                    } else if (cntName.indexOf("percentmemoryused")!==-1 || objName.indexOf("memory")!==-1){
+                        type = "ram";
+                    } else if (cntName.indexOf("% free space")!==-1 || objName.indexOf("logicaldisk")!==-1){
+                        if (inst==="C:")      type = "c";
+                        else if (inst==="D:") type = "d";
+                    }
+
+                    // Fallback-Logik falls nicht eindeutig
+                    if (!type){
+                        var pos = servers[path]._cnt++;
+                        if (pos===0)      type = "cpu";
+                        else if (pos===1) type = "ram";
+                        else{
+                            if (inst==="C:")      type = "c";
+                            else if (inst==="D:") type = "d";
+                            else if (pos===2)      type = "c";
+                            else if (pos===3)      type = "d";
+                        }
+                    }
+
+                    // Werte & Historie speichern
+                    if (type==="cpu"){
+                        servers[path].cpu       = last;
+                        servers[path].cpuPoints = points;
+                    } else if (type==="ram"){
+                        servers[path].ram       = last;
+                        servers[path].ramPoints = points;
+                    } else if (type==="c"){
+                        servers[path].c       = last;
+                        servers[path].cPoints = points;
+                    } else if (type==="d"){
+                        servers[path].d       = last;
+                        servers[path].dPoints = points;
+                    }
+                }
+            }
+
+            // 3. Sortierte Ausgabe
+            var ordered = Object.keys(servers).sort(function(a,b){
+                return a.localeCompare(b, undefined, {sensitivity:'base'});
+            });
+
+            if (!ordered.length){
+                $dash.html('<p>No metric values found - possibly the wrong time range.</p>');
+                return;
+            }
+
+            ordered.forEach(function(p, rowIdx){
+                var srv = servers[p];
+                var friendly = getFriendlyName(p);
+                var display  = friendly ? shortHost(p)+" - "+friendly : shortHost(p);
+                var $row = $('<div class="server-row">');
+                $row.append($('<div class="srv-name">').text(display));
+
+                $row.append(makeBox('CPU %', srv.cpu, srv.cpuPoints,   'chart_'+rowIdx+'_cpu'));
+                $row.append(makeBox('RAM %', srv.ram, srv.ramPoints,   'chart_'+rowIdx+'_ram'));
+                $row.append(makeBox('C % Free', srv.c, srv.cPoints,    'chart_'+rowIdx+'_c'));
+                $row.append(makeBox('D % Free', srv.d, srv.dPoints,    'chart_'+rowIdx+'_d'));
+
+                $dash.append($row);
+            });
+        }
+
+        /* -------------------------------------------------------------- 6) Legend lookup (dataset <-> legend row) -------------------------------------------------------------- */
+        function findLegend(ds, legends){
+            if (!legends) return null;
+            // Direct ID match
+            for (var i=0;i<legends.length;i++){
+                if (legends[i].id===ds.id) return legends[i];
+            }
+            // Path match as fallback
+            for (var i=0;i<legends.length;i++){
+                var leg = legends[i];
+                var legPath = (leg.path||leg.target||"").toLowerCase();
+                var dsPath  = (ds.path||ds.target||"").toLowerCase();
+                if (legPath && dsPath && legPath===dsPath) return leg;
+            }
+            return null;
+        }
+
+        /* -------------------------------------------------------------- 7) Mini chart box - delayed rendering with axes -------------------------------------------------------------- */
+        function makeBox(label, lastVal, points, chartId){
+            var $box = $('<div class="box">');
+            $box.append($('<div class="label">').text(label));
+
+            var rounded = (lastVal===null||lastVal===undefined) ? '-' : Math.round(lastVal);
+            $box.append($('<div class="value">').text(rounded));
+
+            var $chartDiv = $('<div class="miniChart">').attr('id', chartId);
+            $box.append($chartDiv);
+
+            // Only create the chart once the DIV is in the DOM
+            if (typeof CanvasJS !== "undefined" && points && points.length){
+                setTimeout(function(){
+                    try{
+                        var axisCfg = getMiniAxisConfig(points);
+                        var chart = new CanvasJS.Chart(chartId,{
+                            animationEnabled:false,
+                            backgroundColor:"transparent",
+                            height:150,
+                            width:240,
+                            credits:{ enabled:false },   // <-- Remove branding (only allowed with a license)
+                            axisX:{
+                                title:"",
+                                intervalType:axisCfg.intervalType,
+                                interval:axisCfg.interval,
+                                valueFormatString:axisCfg.valueFormatString,
+                                labelAngle:axisCfg.labelAngle,
+                                lineThickness:1,
+                                tickLength:5,
+                                gridThickness:0,
+                                labelFontFamily:"Segoe UI",
+                                labelFontSize:10,
+                                labelFontColor:"#475569",
+                                titleFontFamily:"Segoe UI",
+                                margin:8
+                            },
+                            axisY:{
+                                title:"",
+                                suffix:"%",
+                                includeZero:true,
+                                lineThickness:1,
+                                tickLength:5,
+                                gridThickness:0,
+                                labelFontFamily:"Segoe UI",
+                                labelFontSize:10,
+                                labelFontColor:"#475569",
+                                titleFontFamily:"Segoe UI",
+                                margin:6
+                            },
+                            toolTip:{
+                                fontFamily:"Segoe UI",
+                                fontSize:12
+                            },
+                            data:[{
+                                type:"spline",
+                                lineThickness:2,
+                                markerSize:0,
+                                color:"#4f83ff",
+                                dataPoints: points
+                            }]
+                        });
+                        chart.render();
+                    }catch(e){
+                        console.error("CanvasJS chart error (ID="+chartId+"):",e);
+                    }
+                },0);
+            }else if (typeof CanvasJS==="undefined"){
+                console.warn("CanvasJS is not loaded - mini chart cannot be displayed (ID="+chartId+")");
+            }
+
+            return $box;
+        }
+    </script>
+</body>
+</html>

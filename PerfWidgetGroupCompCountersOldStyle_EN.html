@@ -1,0 +1,739 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SCOM Performance Widget - Server Name Selection (Checkbox Default = Off)</title>
+    <!-- jQuery & CanvasJS (local environment) -->
+    <script src="/dashboardlibs/jquery.js"></script>
+    <script src="/dashboardlibs/canvasjs.min.js"></script>
+    <style>
+        :root{
+            --ui-font:"Segoe UI Variable","Segoe UI",Arial,Helvetica,sans-serif;
+            --bg:#f3f6fb;
+            --panel:#ffffff;
+            --border:#dbe3ee;
+            --text:#0f172a;
+            --muted:#475569;
+            --primary:#2563eb;
+            --primary-dark:#1d4ed8;
+        }
+        html, body{
+            height:100%;
+        }
+        body{
+            font-family:var(--ui-font);
+            margin:0;
+            padding:1rem;
+            background:var(--bg);
+            color:var(--text);
+            box-sizing:border-box;
+            display:flex;
+            flex-direction:column;
+        }
+        #controls{
+            position:relative;
+            margin-bottom:1rem;
+            padding:1rem 280px 1rem 1.1rem;
+            background:var(--panel);
+            border:1px solid var(--border);
+            border-radius:16px;
+            box-shadow:0 10px 26px rgba(15,23,42,0.06);
+        }
+        #controls label,
+        #controls select,
+        #controls input,
+        #controls button{
+            margin-right:.5rem;
+            vertical-align:middle;
+            font-family:var(--ui-font);
+        }
+        #controls label{
+            font-size:14px;
+            font-weight:600;
+            color:#334155;
+        }
+        #controls select,
+        #controls input{
+            height:38px;
+            padding:0 .8rem;
+            border:1px solid #cbd5e1;
+            border-radius:10px;
+            background:#fff;
+            color:var(--text);
+            font-size:14px;
+            box-sizing:border-box;
+        }
+        #controls button{
+            height:38px;
+            padding:0 .95rem;
+            border:1px solid #cbd5e1;
+            border-radius:10px;
+            background:#fff;
+            color:var(--text);
+            font-size:14px;
+            cursor:pointer;
+            box-shadow:0 1px 2px rgba(15,23,42,0.04);
+        }
+        #controls button:hover{
+            background:#f8fafc;
+        }
+        #refreshBtn{
+            background:var(--primary);
+            border-color:var(--primary);
+            color:#fff;
+            font-weight:600;
+        }
+        #refreshBtn:hover{
+            background:var(--primary-dark);
+        }
+        #chartContainer{
+            flex:1 1 auto;
+            min-height:520px;
+            width:100%;
+            background:var(--panel);
+            border:1px solid var(--border);
+            border-radius:16px;
+            box-shadow:0 12px 28px rgba(15,23,42,0.06);
+            overflow:hidden;
+        }
+        #instanceControl {display:none;}
+        .inlineControl {display:inline-flex;align-items:flex-start;margin-left:12px;gap:10px;}
+        #targetWrapper{
+            border:1px solid #cbd5e1;
+            border-radius:10px;
+            padding:8px 10px;
+            overflow-y:auto;
+            width:600px;
+            min-height:44px;
+            max-height:110px;
+            display:inline-block;
+            vertical-align:middle;
+            background:#fff;
+        }
+        #targetContainer{
+            display:flex;
+            flex-wrap:wrap;
+            gap:8px 14px;
+            align-items:flex-start;
+            align-content:flex-start;
+        }
+        .targetEntry{
+            display:inline-flex;
+            align-items:center;
+            gap:6px;
+            margin:0;
+            line-height:1.1;
+            white-space:nowrap;
+            font-size:13px;
+            color:#334155;
+        }
+        .targetEntry input{
+            margin:0;
+        }
+        .srvItem {margin-right:0;}
+        .srvItem label {white-space:nowrap;}
+        .controls-brand{
+            position:absolute;
+            top:18px;
+            right:18px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            width:220px;
+            min-height:92px;
+            padding:12px 14px;
+            border-radius:16px;
+            background:rgba(255,255,255,0.98);
+            border:1px solid rgba(203,213,225,0.95);
+            box-shadow:0 16px 32px rgba(15,23,42,0.12);
+            pointer-events:none;
+            user-select:none;
+        }
+        .controls-brand img{
+            display:block;
+            width:100%;
+            height:auto;
+            filter:saturate(1.08) contrast(1.04);
+        }
+        @media (max-width:1500px){
+            #controls{
+                padding-right:1.1rem;
+            }
+            .controls-brand{
+                position:static;
+                margin:14px 0 0 auto;
+                width:220px;
+                min-height:0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- ==== Controls ==== -->
+    <div id="controls">
+        <label for="counterSelect">Counter:</label>
+        <select id="counterSelect"></select>
+
+        <label for="groupSelect" style="margin-left:12px;">Group ID:</label>
+        <select id="groupSelect" style="min-width:350px;"></select>
+
+        <label style="margin-left:12px;">
+            <input id="showAgg" type="checkbox"/> Show group Min/Avg/Max
+        </label>
+
+        <!-- Day selection -->
+        <label style="margin-left:12px;">
+            Time Range (Days):
+            <select id="daysSelect"></select>
+        </label>
+
+        <!-- Start/end date + time (flexible) -->
+        <label style="margin-left:12px;">
+            Start Date + Time:
+            <input type="datetime-local" id="startDateTimeSelect">
+        </label>
+        <label style="margin-left:12px;">
+            End Date + Time:
+            <input type="datetime-local" id="endDateTimeSelect">
+        </label>
+
+        <!-- Server checkbox list -->
+        <div class="inlineControl">
+            <label for="targetWrapper">ServerName(s):</label>
+            <div id="targetWrapper"><div id="targetContainer"></div></div>
+        </div>
+
+        <!-- Instance dropdown (only for LogicalDisk) -->
+        <div id="instanceControl">
+            <label for="instanceSelect">Instance (Drive):</label>
+            <select id="instanceSelect"></select>
+        </div>
+
+        <button id="refreshBtn" type="button" style="margin-left:12px;">Refresh</button>
+
+        <div class="controls-brand">
+            <img src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo">
+        </div>
+    </div>
+
+    <!-- ==== Chart ==== -->
+    <div id="chartContainer"></div>
+
+    <script type="text/javascript">
+        /* -------------------------------------------------------------- 1) Configuration & helper functions -------------------------------------------------------------- */
+        // Replace this with a default group ID from your demo environment.
+        var defaultGroupId = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+        var defaultDays    = 3;                     // Default day count
+
+        // Host name -> friendly name mapping
+        var hostToFriendly = {
+            // Optional demo mapping:
+            // "server01.demo.local":"Application Server 01",
+            // "server02.demo.local":"Database Server 01"
+        };
+        function getFriendlyName(host){ return host && hostToFriendly[host] ? hostToFriendly[host] : ""; }
+        function shortHost(host){ return host ? host.split(".")[0] : ""; }
+        function isDrive(str){ return typeof str==="string" && /^[A-Z]:$/i.test(str); }
+
+        // Format date -> "YYYY-MM-DDTHH:MM" (for <input type="datetime-local">)
+        function formatDateTimeLocal(d){
+            var y = d.getFullYear(),
+                m = ('0'+(d.getMonth()+1)).slice(-2),
+                day = ('0'+d.getDate()).slice(-2),
+                hh = ('0'+d.getHours()).slice(-2),
+                mm = ('0'+d.getMinutes()).slice(-2);
+            return y+'-'+m+'-'+day+'T'+hh+':'+mm;
+        }
+
+        // Group and counter definitions
+        // Replace the group IDs below with groups from your demo environment.
+        var groupOptions = [
+            { name: "Demo Windows Computers", id: "9c95accb-2417-b6d9-dd03-b39e896fccab" }
+        ];
+        var counterOptions = [
+            { name: "CPU - % Processor Time (_Total)",  objectname: "Processor Information", countername: "% Processor Time",      instancename: "_Total" },
+            { name: "Memory - Available MBytes",       objectname: "Memory",                  countername: "Available MBytes",    instancename: "" },
+            { name: "Memory - % Memory Used",          objectname: "Memory",                  countername: "PercentMemoryUsed",   instancename: "" },
+            { name: "LogicalDisk - % Free Space",      objectname: "LogicalDisk",             countername: "% Free Space",        instancename: "" }
+        ];
+        var chartSeries = [];
+
+        /* -------------------------------------------------------------- 2) Initialize CSRF token -------------------------------------------------------------- */
+        var requestHeaders = {
+            Accept: "q=0.8;application/json;q=0.9",
+            "Content-Type": "application/json"
+        };
+        InitializeCSRFToken();
+        function InitializeCSRFToken(){
+            var cookies=document.cookie.split("; ");
+            var map={};
+            for(var i=0;i<cookies.length;i++){
+                var cur=cookies[i].split("=");
+                map[cur[0]]=cur[1];
+            }
+            if(map["SCOM-CSRF-TOKEN"] && map["SCOM-CSRF-TOKEN"]!==null){
+                requestHeaders["SCOM-CSRF-TOKEN"]=decodeURIComponent(map["SCOM-CSRF-TOKEN"]);
+            }
+        }
+
+        /* -------------------------------------------------------------- 3) UTC -> local time (bug fix) -------------------------------------------------------------- */
+        function convertUTCDateToLocalDate(date){
+            var offsetMs = date.getTimezoneOffset()*60*1000;
+            return new Date(date.getTime()-offsetMs);
+        }
+
+        /* -------------------------------------------------------------- 4) Legend lookup (supports instance/instancename) -------------------------------------------------------------- */
+        function findLegend(ds, legends){
+            for(var i=0;i<legends.length;i++){
+                var leg=legends[i];
+                if(leg.id!==ds.id)continue;
+                var legendInst=leg.instance||leg.instancename||"";
+                var dsInst=ds.instance||"";
+                if(legendInst && dsInst && legendInst===dsInst) return leg;
+                return leg;
+            }
+            return null;
+        }
+
+        /* -------------------------------------------------------------- 5) UI initialization + synchronization -------------------------------------------------------------- */
+        window.onload=function(){
+            // Counter dropdown
+            var $counter=$('#counterSelect');
+            $counter.empty();
+            for(var i=0;i<counterOptions.length;i++){
+                $counter.append($('<option>',{value:i,text:counterOptions[i].name}));
+            }
+
+            // Group dropdown
+            var $groupSelect=$('#groupSelect');
+            $groupSelect.empty();
+            for(var g=0;g<groupOptions.length;g++){
+                var grp=groupOptions[g];
+                var display=grp.name+" ("+grp.id+")";
+                $groupSelect.append($('<option>',{value:grp.id,text:display}));
+            }
+            $groupSelect.val(defaultGroupId);
+            $groupSelect.on('change',loadAndRender);
+
+            // Days dropdown (1 ... 90)
+            var $days=$('#daysSelect');
+            $days.empty();
+            $days.append('<option value="">--</option>');
+            for(var d=1;d<=90;d++){
+                $days.append($('<option>',{value:d,text:d+" Day"+(d>1?"s":"")}));
+            }
+            $days.val(defaultDays);
+            $days.on('change',function(){
+                syncDatesFromDays();   // <-- angepasst (siehe Definition unten)
+                loadAndRender();
+            });
+
+            // Instance dropdown (LogicalDisk)
+            var $instanceSelect=$('#instanceSelect');
+            function populateInstanceDropdown(){
+                $instanceSelect.empty();
+                $instanceSelect.append('<option value="all">All</option>');
+                var drives=["C:","D:","E:","F:","G:"];
+                for(var i=0;i<drives.length;i++){
+                    $instanceSelect.append('<option value="'+drives[i]+'">'+drives[i]+'</option>');
+                }
+                $instanceSelect.val("all");
+            }
+
+            // Datums-Picker (datetime-local)
+            var $startDate=$('#startDateTimeSelect');
+            var $endDate=$('#endDateTimeSelect');
+            function initDefaultDates(){
+                var now   = new Date();
+                var start = new Date(now.getTime() - defaultDays*24*60*60*1000);
+                $endDate.val(formatDateTimeLocal(now));
+                $startDate.val(formatDateTimeLocal(start));
+                syncDaysFromDates();                // Adjust the days dropdown
+            }
+            initDefaultDates();
+
+            // Event handlers for date fields
+            $startDate.on('change',function(){ syncDaysFromDates(); loadAndRender(); });
+            $endDate.on('change',function(){ syncDaysFromDates(); loadAndRender(); });
+
+            // Counter changes (with LogicalDisk option)
+            $counter.on('change',function(){
+                var selIdx=parseInt($(this).val(),10);
+                var selObj=counterOptions[selIdx];
+                if(selObj.objectname==="LogicalDisk"){
+                    $('#instanceControl').show();
+                    populateInstanceDropdown();
+                }else{
+                    $('#instanceControl').hide();
+                }
+                loadAndRender();
+            });
+
+            $('#showAgg').on('change',loadAndRender);
+            $('#refreshBtn').on('click',loadAndRender);
+
+            // Initial load
+            loadAndRender();
+        };
+
+        /* -------------------------------------------------------------- 6) Synchronization helpers -------------------------------------------------------------- */
+        // Days dropdown -> start/end date and time
+        function syncDatesFromDays(){
+            var days = parseInt($('#daysSelect').val(),10);
+            if(isNaN(days) || days < 1) return;
+
+            // Use the date currently entered in the end date field (if valid)
+            var endStr  = $('#endDateTimeSelect').val();
+            var endDate = endStr ? new Date(endStr) : new Date();   // fallback = now
+            if(isNaN(endDate.getTime())) endDate = new Date();    // safety
+
+            var startDate = new Date(endDate.getTime() - days*24*60*60*1000);
+            $('#endDateTimeSelect').val(formatDateTimeLocal(endDate));
+            $('#startDateTimeSelect').val(formatDateTimeLocal(startDate));
+        }
+
+        // Start/end date and time -> days dropdown (rounded)
+        function syncDaysFromDates(){
+            var startStr=$('#startDateTimeSelect').val();
+            var endStr=$('#endDateTimeSelect').val();
+            if(!startStr || !endStr) return;
+            var start=new Date(startStr);
+            var end  =new Date(endStr);
+            if(end<start){ var tmp=start; start=end; end=tmp; }
+            var diffDays=Math.round((end-start)/(24*60*60*1000));
+            if(diffDays>=1 && diffDays<=90){
+                $('#daysSelect').val(diffDays);
+            }else{
+                $('#daysSelect').val('');
+            }
+        }
+
+        /* -------------------------------------------------------------- 7) Fetch data and build series -------------------------------------------------------------- */
+        function loadAndRender(){
+            var idx=parseInt($('#counterSelect').val(),10);
+            var selectedCounter=counterOptions[idx];
+            var groupId = $('#groupSelect').val()||defaultGroupId;
+            if(!groupId){ alert("Please enter a valid Group ID."); return; }
+
+            // UI-Feedback
+            $('#refreshBtn').prop('disabled',true).text('Loading...');
+            $('#chartContainer').html('Loading…');
+
+            // ---------- Time range ----------
+            var startStr   = $('#startDateTimeSelect').val();          // User start date
+            var endStr     = $('#endDateTimeSelect').val();          // User end date (optional)
+            var startDate  = new Date(startStr);
+            var now        = new Date();                             // Current time (for the backend)
+            var filterEndDate = endStr ? new Date(endStr) : now;     // For display
+            if(isNaN(filterEndDate.getTime())) filterEndDate = now; // fallback
+
+            // Duration in minutes from the start date until **now** - sent to the backend
+            var durationMinutes = Math.round((now - startDate) / (1000 * 60));
+
+            // Perioden-Label (Chart-Titel)
+            var periodLabel = startStr.replace('T',' ').substring(0,16) +
+                              " to " + formatDateTimeLocal(filterEndDate).replace('T',' ').substring(0,16);
+
+            // ---------- Instance name (LogicalDisk only) ----------
+            var instancenameToSend = selectedCounter.instancename;
+            if(selectedCounter.objectname==="LogicalDisk"){
+                var selInst = $('#instanceSelect').val();
+                instancenameToSend = (selInst==="all")?"%":selInst;
+            }
+
+            // ---------- Request-Payload ----------
+            var payload = {
+                id: groupId,
+                performanceCounters:[{
+                    objectname: selectedCounter.objectname,
+                    countername: selectedCounter.countername,
+                    instancename: instancenameToSend
+                }],
+                legends:["target","path","instance","lastvalue"],
+                duration: durationMinutes               // Only the duration - backend returns data until now
+                // optional, if the backend needs an end date:
+                // end: now.toISOString()
+            };
+
+            // ---------- Ajax-Request ----------
+            $.ajax({
+                url:"/OperationsManager/data/performance",
+                type:"POST",
+                headers:requestHeaders,
+                dataType:"json",
+                data:JSON.stringify(payload),
+                success:function(result){
+                    if(!result||!result.datasets||result.datasets.length===0){
+                        $('#chartContainer').html("No datasets returned.");
+                        return;
+                    }
+                    chartSeries=[];
+
+                    /* ---- Server checkbox list ---- */
+                    var $targetContainer=$('#targetContainer');
+                    var previouslySelected=[];
+                    $targetContainer.find('input.targetChk:checked')
+                                    .each(function(){ previouslySelected.push($(this).val()); });
+                    var allChecked=$targetContainer.find('#targetAll').is(':checked');
+                    $targetContainer.empty();
+                    $targetContainer.append('<span class="targetEntry"><input type="checkbox" id="targetAll" value="all"><label for="targetAll">All</label></span>');
+                    $('#targetAll').prop('checked',allChecked);
+
+                    if(result.legends && result.legends.rows){
+                        var sortedRows=result.legends.rows.slice();
+                        sortedRows.sort(function(a,b){
+                            var aPath=a.path||"", bPath=b.path||"";
+                            return aPath.localeCompare(bPath,undefined,{sensitivity:'base'});
+                        });
+                        for(var r=0;r<sortedRows.length;r++){
+                            var row=sortedRows[r];
+                            var displayName="";
+                            if(selectedCounter.objectname==="LogicalDisk"){
+                                var hostFull="", drive="";
+                                if(isDrive(row.target)){
+                                    drive=row.target; hostFull=row.path;
+                                }else if(isDrive(row.path)){
+                                    drive=row.path;   hostFull=row.target;
+                                }else{
+                                    hostFull=row.target; drive=row.path;
+                                }
+                                if(hostFull && drive){
+                                    var friendly=getFriendlyName(hostFull);
+                                    var short=shortHost(hostFull);
+                                    var hostPart=short;
+                                    if(friendly) hostPart=short+" - "+friendly;
+                                    displayName=hostPart+" - "+drive;
+                                }else{
+                                    displayName=drive||hostFull||row.id;
+                                }
+                            }else{
+                                var path=row.path||row.target||"";
+                                var friendly=hostToFriendly[path]||"";
+                                if(path){
+                                    displayName=path;
+                                    if(friendly) displayName=path+" - "+friendly;
+                                }else{
+                                    displayName=row.id||"";
+                                }
+                            }
+                            var chkId='target_'+row.id;
+                            var isChecked=previouslySelected.includes(row.id);
+                            $targetContainer.append(
+                                '<span class="targetEntry">'+
+                                '<input type="checkbox" class="targetChk srvItem" id="'+chkId+
+                                '" value="'+row.id+'"'+(isChecked?' checked':'')+'>'+
+                                '<label for="'+chkId+'">'+displayName+'</label>'+
+                                '</span>'
+                            );
+                        }
+                    }
+                    $targetContainer.off('change').on('change','input',function(){
+                        if(this.id==='targetAll'){
+                            var checked=$(this).is(':checked');
+                            $targetContainer.find('input.targetChk').prop('checked',checked);
+                        }else{
+                            if(!$(this).is(':checked')) $('#targetAll').prop('checked',false);
+                        }
+                        loadAndRender();
+                    });
+
+                    /* ---- Determine target filter ---- */
+                    var targetFilter=[], showAll=false;
+                    if($('#targetAll').is(':checked')){
+                        showAll=true;
+                    }else{
+                        $targetContainer.find('input.targetChk:checked')
+                                         .each(function(){ targetFilter.push($(this).val()); });
+                        if(targetFilter.length===0) showAll=true;
+                    }
+                    var showAgg=$('#showAgg').is(':checked');
+                    var aggSum=new Array(24).fill(0.0);
+                    var aggCount=new Array(24).fill(0);
+                    var aggMin=new Array(24).fill(Number.POSITIVE_INFINITY);
+                    var aggMax=new Array(24).fill(Number.NEGATIVE_INFINITY);
+
+                    // ----- Durchlauf aller Datasets -----
+                    for(var d=0; d<result.datasets.length; d++){
+                        var ds=result.datasets[d];
+                        if(!showAll && targetFilter.indexOf(ds.id)===-1) continue;
+                        var legend=findLegend(ds,result.legends.rows);
+                        var seriesName="";
+                        if(legend){
+                            if(selectedCounter.objectname==="LogicalDisk"){
+                                var hostFull="", drive="";
+                                if(isDrive(legend.target)){
+                                    drive=legend.target; hostFull=legend.path;
+                                }else if(isDrive(legend.path)){
+                                    drive=legend.path;   hostFull=legend.target;
+                                }else{
+                                    hostFull=legend.target; drive=legend.path;
+                                }
+                                var friendly=getFriendlyName(hostFull);
+                                var short=shortHost(hostFull);
+                                var hostPart=short;
+                                if(friendly) hostPart=short+" - "+friendly;
+                                if(hostFull && drive){
+                                    seriesName=hostPart+" - "+drive;
+                                }else{
+                                    seriesName=hostFull||hostPart||drive||ds.id;
+                                }
+                            }else{
+                                var pth=legend.path||legend.target||"";
+                                var friendly=getFriendlyName(pth);
+                                seriesName=pth;
+                                if(friendly) seriesName=seriesName+" - "+friendly;
+                                if(!pth) seriesName=ds.id;
+                            }
+                        }else{
+                            seriesName=ds.id;
+                        }
+
+                        // ----- Data points (with time range filter) -----
+                        var dataDict=ds.data, points=[];
+                        for(var key in dataDict){
+                            if(!dataDict.hasOwnProperty(key)) continue;
+                            var utcDate=new Date(key);
+                            if(isNaN(utcDate.getTime())) continue;
+                            // Keep data only between startDate and the **user-selected** filterEndDate
+                            if(utcDate < startDate) continue;
+                            if(utcDate > filterEndDate) continue;
+                            var localDate=convertUTCDateToLocalDate(utcDate);
+                            var value=dataDict[key];
+                            points.push({x:localDate,y:value});
+                            if(showAgg){
+                                var hour=localDate.getHours();
+                                aggSum[hour]   +=value;
+                                aggCount[hour] ++;
+                                if(value<aggMin[hour]) aggMin[hour]=value;
+                                if(value>aggMax[hour]) aggMax[hour]=value;
+                            }
+                        }
+                        points.sort(function(a,b){return a.x-b.x;});
+                        chartSeries.push({
+                            type:"spline",
+                            showInLegend:true,
+                            name:seriesName,
+                            dataPoints:points
+                        });
+                    }
+
+                    // ---- Optional: min/avg/max per hour ----
+                    if(showAgg){
+                        var aggMidnight=new Date(); aggMidnight.setHours(0,0,0,0);
+                        var ptsMin=[],ptsAvg=[],ptsMax=[];
+                        for(var h=0; h<24; h++){
+                            ptsMin.push({y:(aggCount[h]>0)?aggMin[h]:null, x:new Date(aggMidnight.getTime())});
+                            ptsAvg.push({y:(aggCount[h]>0)?(aggSum[h]/aggCount[h]):null, x:new Date(aggMidnight.getTime())});
+                            ptsMax.push({y:(aggCount[h]>0)?aggMax[h]:null, x:new Date(aggMidnight.getTime())});
+                            aggMidnight.setHours(aggMidnight.getHours()+1);
+                        }
+                        chartSeries.push({type:"spline",showInLegend:true,name:"Group MIN (per hour)",dataPoints:ptsMin});
+                        chartSeries.push({type:"spline",showInLegend:true,name:"Group AVG (per hour)",dataPoints:ptsAvg});
+                        chartSeries.push({type:"spline",showInLegend:true,name:"Group MAX (per hour)",dataPoints:ptsMax});
+                    }
+
+                    renderChart(selectedCounter.name, periodLabel);
+                },
+                error:function(xhr){
+                    var msg="Request failed. HTTP "+xhr.status;
+                    if(xhr.responseText){
+                        msg+="<br/><pre style='white-space:pre-wrap;'>"+escapeHtml(xhr.responseText)+"</pre>";
+                    }
+                    $('#chartContainer').html(msg);
+                },
+                complete:function(){
+                    $('#refreshBtn').prop('disabled',false).text('Refresh');
+                }
+            });
+        }
+
+        /* -------------------------------------------------------------- 8) Render chart - X-axis with date and time -------------------------------------------------------------- */
+        function renderChart(counterTitle, periodLabel){
+            var titleText = counterTitle + " (" + periodLabel + ")";
+            var fontFamily = "Segoe UI Variable, Segoe UI, Arial, Helvetica, sans-serif";
+            var chart = new CanvasJS.Chart("chartContainer",{
+                animationEnabled:true,
+                theme:"light2",
+                backgroundColor:"#ffffff",
+                title:{
+                    text:titleText,
+                    fontFamily:fontFamily,
+                    fontSize:28,
+                    fontWeight:"600",
+                    fontColor:"#0f172a",
+                    padding:18
+                },
+                legend:{
+                    verticalAlign:"bottom",
+                    horizontalAlign:"center",
+                    fontFamily:fontFamily,
+                    fontSize:14,
+                    fontColor:"#334155",
+                    itemMaxWidth:300,
+                    margin:14
+                },
+                axisX:{
+                    titleFontFamily:fontFamily,
+                    titleFontSize:15,
+                    titleFontWeight:"600",
+                    titleFontColor:"#334155",
+                    labelFontFamily:fontFamily,
+                    labelFontSize:11,
+                    labelFontColor:"#475569",
+                    lineColor:"#94a3b8",
+                    lineThickness:1,
+                    tickLength:8,
+                    tickThickness:1,
+                    gridColor:"rgba(148,163,184,0.22)",
+                    gridThickness:1,
+                    gridDashType:"dash",
+                    margin:12,
+                    labelFormatter:function(e){
+                        return CanvasJS.formatDate(e.value,"DD.MM.YYYY HH:mm");
+                    },
+                    title:"Date and Time"
+                },
+                axisY:{
+                    title:counterTitle,
+                    titleFontFamily:fontFamily,
+                    titleFontSize:15,
+                    titleFontWeight:"600",
+                    titleFontColor:"#334155",
+                    labelFontFamily:fontFamily,
+                    labelFontSize:11,
+                    labelFontColor:"#475569",
+                    lineColor:"#94a3b8",
+                    lineThickness:1,
+                    tickLength:8,
+                    tickThickness:1,
+                    gridColor:"rgba(148,163,184,0.22)",
+                    gridThickness:1,
+                    gridDashType:"dash",
+                    margin:10
+                },
+                toolTip:{
+                    fontFamily:fontFamily,
+                    fontSize:13,
+                    cornerRadius:8,
+                    borderThickness:0,
+                    backgroundColor:"#0f172a",
+                    fontColor:"#f8fafc",
+                    content:"{name}<br/><b>{x:DD.MM.YYYY HH:mm}</b>: {y}"
+                },
+                data:chartSeries
+            });
+            chart.render();
+        }
+
+        /* -------------------------------------------------------------- 9) Helper function - escape HTML (for error messages) -------------------------------------------------------------- */
+        function escapeHtml(str){
+            return String(str)
+                .replace(/&/g,"&amp;")
+                .replace(/</g,"&lt;")
+                .replace(/>/g,"&gt;")
+                .replace(/"/g,"&quot;")
+                .replace(/'/g,"&#39;");
+        }
+    </script>
+</body>
+</html>

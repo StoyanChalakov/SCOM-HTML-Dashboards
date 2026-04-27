@@ -1,0 +1,2309 @@
+<!DOCTYPE HTML>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Performance-Widget</title>
+
+  <!-- jQuery & CanvasJS (local environment) -->
+  <script src="/dashboardlibs/jquery.js"></script>
+  <script src="/dashboardlibs/canvasjs.min.js"></script>
+
+  <style>
+    :root{
+      --ui-font: "Segoe UI", Arial, Helvetica, sans-serif;
+      --ui-font-size: 12px;
+      --border: #ddd;
+      --bg: #f5f5f5;
+      --panel: #fff;
+      --muted: #666;
+      --error: #b00020;
+      --ok: #0b6b3a;
+      --warn: #9a6a00;
+      --bad: #b00020;
+    }
+    html, body { height:100%; }
+    body{
+      font-family: var(--ui-font);
+      font-size: var(--ui-font-size);
+      margin:0;
+      padding:0;
+      background: var(--bg);
+      overflow:hidden;
+    }
+    #widgetRoot{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      padding:10px;
+      box-sizing:border-box;
+      overflow-y:auto;
+    }
+
+    /* ---------- Top Bar ---------- */
+    #topBar{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:8px 10px;
+      box-sizing:border-box;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    #topLeft{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    #widgetTitle{font-size:14px;font-weight:600;line-height:1.2;}
+    #summaryLine{color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #topRight{display:flex;gap:8px;flex:0 0 auto;align-items:center;}
+    button{
+      height:28px;
+      font-size: var(--ui-font-size);
+      font-family: var(--ui-font);
+      padding:0 10px;
+      cursor:pointer;
+      border:1px solid var(--border);
+      background:#fff;
+      border-radius:4px;
+    }
+    button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff;}
+    button.secondary{background:#fff;color:#333;}
+    button:disabled{opacity:.6;cursor:default;}
+
+    /* ---------- Filter Panel ---------- */
+    #filtersPanel{
+      background: var(--panel);
+      border:1px solid var(--border);
+      padding:10px;
+      box-sizing:border-box;
+      position:relative;
+    }
+    #filtersPanel.is-collapsed{display:none;}
+    #filtersGrid{
+      display:grid;
+      grid-template-columns:repeat(12,1fr);
+      gap:10px;
+      align-items:end;
+    }
+    .field{display:flex;flex-direction:column;gap:4px;min-width:0;}
+    .field label{color:#333;font-weight:600;}
+    .field .hint{color:var(--muted);font-weight:400;}
+    .filters-logo{
+      position:absolute;
+      right:10px;
+      top:74px;
+      width:180px;
+      z-index:2;
+      pointer-events:none;
+    }
+    .logo-card{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      width:100%;
+      min-height:74px;
+      padding:8px 10px;
+      border:1px solid #d8e1ec;
+      border-radius:10px;
+      background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);
+      box-shadow:0 10px 22px rgba(15,23,42,0.08);
+      box-sizing:border-box;
+    }
+    .logo-card img{
+      display:block;
+      max-width:100%;
+      max-height:44px;
+      object-fit:contain;
+    }
+    select, input{
+      height:28px;
+      font-size:var(--ui-font-size);
+      font-family:var(--ui-font);
+      padding:2px 8px;
+      border:1px solid var(--border);
+      border-radius:4px;
+      box-sizing:border-box;
+      width:100%;
+      min-width:0;
+      background:#fff;
+    }
+    .row{display:flex;gap:8px;align-items:center;min-width:0;}
+    .row > *{min-width:0;}
+    .row select{flex:1 1 auto;}
+    .row button{flex:0 0 auto;height:28px;}
+    .span-2{grid-column:span 2;}
+    .span-3{grid-column:span 3;}
+    .span-4{grid-column:span 4;}
+    .span-6{grid-column:span 6;}
+    .span-12{grid-column:span 12;}
+    @media (max-width:1200px){
+      .span-2,.span-3,.span-4,.span-6{grid-column:span 12;}
+      #topBar{flex-direction:column;align-items:flex-start;}
+      #topRight{width:100%;justify-content:flex-end;}
+      .filters-logo{
+        position:static;
+        width:100%;
+        margin-top:10px;
+      }
+    }
+
+    /* ---------- Message Line ---------- */
+    #messageLine{
+      background:var(--panel);
+      border:1px solid var(--border);
+      padding:6px 10px;
+      box-sizing:border-box;
+      color:var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #messageLine.is-error{color:var(--error);border-color:#f0c2c2;}
+
+    /* ---------- Tiles ---------- */
+    #tiles{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      justify-content:flex-start;
+      align-items:flex-start;
+      padding:4px;
+      max-height:300px;
+      overflow-y:auto;
+    }
+    .tile{
+      flex:0 1 120px;
+      padding:8px;
+      border-radius:5px;
+      color:#fff;
+      text-align:left;
+      box-shadow:0 2px 4px rgba(0,0,0,0.15);
+      cursor:pointer;
+      transition:transform .1s;
+      min-height:48px;
+      position:relative;
+    }
+    .tile.has-alerts{flex:0 1 120px;}
+    .tile:hover{transform:translateY(-2px);}
+    .state-critical    {background:#d9534f;}
+    .state-healthy     {background:#5cb85c;}
+    .state-warning     {background:#f0ad4e;}
+    .state-unmonitored {background:#6c757d;}
+    .state-unknown     {background:#777;}
+    .tile-header{
+      text-align:center;
+      margin-bottom:8px;
+      padding-bottom:6px;
+      border-bottom:1px solid rgba(255,255,255,0.3);
+    }
+    .friendly-name{font-weight:bold;font-size:0.76em;}
+    .original-host{font-size:0.62em;opacity:0.75;margin-top:4px;display:block;}
+    .alert-count{font-size:0.66em;opacity:0.95;margin-top:5px;}
+    .alerts-section{margin-top:8px;}
+    .alert-item{
+      background:rgba(0,0,0,0.2);
+      padding:5px 6px;
+      margin:3px 0;
+      border-radius:3px;
+      font-size:0.66em;
+      border-left:3px solid rgba(255,255,255,0.5);
+    }
+    .alert-item.alert-critical{border-left-color:#c9302c;background:rgba(0,0,0,0.3);}
+    .alert-item.alert-warning{border-left-color:#ec971f;}
+    .alert-name{font-weight:600;margin-bottom:3px;}
+    .alert-severity{font-size:0.68em;opacity:0.95;}
+    .alert-meta{
+      font-size:0.62em;
+      opacity:0.9;
+      margin-top:5px;
+      line-height:1.45;
+    }
+    .alert-meta-item{display:block;}
+    .loading{text-align:center;padding:16px;color:#666;}
+    .tile-indicator{
+      position:absolute;
+      top:4px;
+      right:4px;
+      font-size:0.85em;
+      line-height:1;
+      pointer-events:none;
+    }
+    .tile-indicator.maintenance{color:#ffeb3b;}
+
+    /* ---------- Chart / Multiples Container ---------- */
+    #chartContainer{
+      flex:1 1 auto;
+      min-height:260px;
+      background:var(--panel);
+      border:1px solid var(--border);
+      overflow:hidden;
+      position:relative;
+    }
+    #chartContainer.sm-mode{
+      overflow:auto;
+      padding:10px;
+      box-sizing:border-box;
+    }
+
+    /* ---------- Small Multiples Layout ---------- */
+    .sm-root{display:flex;flex-direction:column;gap:10px;}
+    .server-row{
+      background:#fff;
+      border:1px solid #eee;
+      border-radius:8px;
+      padding:10px;
+      display:grid;
+      gap:10px;
+      align-items:stretch;
+    }
+    .srv{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      justify-content:center;
+    }
+    .srv .host{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .srv .friendly{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .metric{
+      border:1px solid #eee;
+      border-radius:8px;
+      padding:8px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      min-width:0;
+    }
+    .metric .top{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      gap:10px;
+      min-width:0;
+    }
+    .metric .label{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .metric .value{
+      font-size:16px;
+      font-weight:800;
+      white-space:nowrap;
+    }
+    .spark{height:88px;width:100%;min-width:0;}
+
+    /* (kept; not used by the current multi-line SM rendering) */
+    .inst-more{
+      color:var(--muted);
+      font-size:11px;
+      padding-top:2px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    /* ---------- Counter dropdown checklist ---------- */
+    .dd{position:relative;width:100%;}
+    .dd-btn{
+      width:100%;
+      text-align:left;
+      height:28px;
+      border:1px solid var(--border);
+      border-radius:4px;
+      background:#fff;
+      padding:0 8px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      cursor:pointer;
+      font-family:var(--ui-font);
+      font-size:var(--ui-font-size);
+      box-sizing:border-box;
+    }
+    .dd-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .dd-panel{
+      position:absolute;
+      left:0; right:0;
+      top:calc(100% + 4px);
+      z-index:50;
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:4px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      max-height:260px;
+      overflow:auto;
+      display:none;
+      padding:6px;
+      box-sizing:border-box;
+    }
+    .dd-panel.is-open{display:block;}
+    .dd-item{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:4px 6px;
+      border-radius:4px;
+    }
+    .dd-item:hover{background:#f6f6f6;}
+    .dd-item input{height:auto;width:auto;}
+    .dd-item label{
+      font-weight:400;margin:0;cursor:pointer;flex:1 1 auto;min-width:0;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+
+    #instanceWrap{display:none;}
+  </style>
+</head>
+
+<body>
+<div id="widgetRoot">
+  <div id="topBar">
+    <div id="topLeft">
+      <div id="widgetTitle">Performance Widget</div>
+      <div id="summaryLine">Initializing…</div>
+    </div>
+    <div id="topRight">
+      <button id="toggleFiltersBtn" class="secondary" type="button">Hide filters</button>
+      <button id="resetZoomBtn" class="secondary" type="button" disabled>Reset zoom</button>
+      <button id="refreshBtn" class="primary" type="button">Refresh</button>
+      <button id="resetAllBtn" class="secondary" type="button">Reset</button>
+    </div>
+  </div>
+
+  <div id="filtersPanel">
+    <div id="filtersGrid">
+      <div class="field span-6">
+        <label for="groupSelect">Group</label>
+        <div class="row">
+          <select id="groupSelect"></select>
+          <button id="reloadGroupsBtn" class="secondary" type="button">Reload</button>
+        </div>
+      </div>
+
+      <div class="field span-2">
+        <label for="computerSearch">Computer search</label>
+        <input id="computerSearch" type="text" placeholder="e.g. srv01" />
+      </div>
+
+      <div class="field span-4">
+        <label for="computerSelect">Computer</label>
+        <div class="row">
+          <select id="computerSelect" multiple size="1"></select>
+          <button id="reloadComputersBtn" class="secondary" type="button">Reload</button>
+          <button id="toggleComputerBtn" class="secondary" type="button">Expand</button>
+        </div>
+      </div>
+
+      <div class="field span-4">
+        <label for="objectTypeSelect">Object type</label>
+        <select id="objectTypeSelect" multiple size="1"></select>
+      </div>
+
+      <div class="field span-4">
+        <label>Counter</label>
+        <div class="dd">
+          <button id="counterDropdownBtn" type="button" class="dd-btn">
+            <span id="counterDropdownLabel">-- Select counter(s) --</span>
+            <span>▾</span>
+          </button>
+          <div id="counterDropdownPanel" class="dd-panel"></div>
+          <select id="counterSelect" multiple style="display:none;"></select>
+        </div>
+      </div>
+
+      <div class="field span-4" id="instanceWrap">
+        <label for="instanceSelect">Instance</label>
+        <select id="instanceSelect"></select>
+      </div>
+
+      <div class="field span-2">
+        <label for="daysSelect">Time range (days)</label>
+        <select id="daysSelect"></select>
+      </div>
+
+      <div class="field span-3">
+        <label for="startDateTime">Start date + time</label>
+        <input type="datetime-local" id="startDateTime" />
+      </div>
+
+      <div class="field span-3">
+        <label for="endDateTime">End date + time</label>
+        <input type="datetime-local" id="endDateTime" />
+      </div>
+
+      <div class="field span-2">
+        <label for="targetSearch">Target filter</label>
+        <input id="targetSearch" type="text" placeholder="e.g. DB01 / C:" />
+      </div>
+
+      <div class="field span-2">
+        <label class="hint">&nbsp;</label>
+        <button id="reloadCountersBtn" class="secondary" type="button">Reload counters</button>
+      </div>
+    </div>
+    <div class="filters-logo" aria-hidden="true">
+      <div class="logo-card">
+        <img src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo" />
+      </div>
+    </div>
+  </div>
+
+  <div id="messageLine">Ready.</div>
+  <div id="tiles" class="grid"></div>
+  <div id="chartContainer"></div>
+</div>
+
+<script>
+(function(){
+  var requestHeaders = {"Accept":"q=0.8;application/json;q=0.9","Content-Type":"application/json"};
+  (function initCsrf(){
+    var m = document.cookie.match(/SCOM-CSRF-TOKEN=([^;]+)/);
+    if (m) requestHeaders["SCOM-CSRF-TOKEN"] = decodeURIComponent(m[1]);
+  })();
+
+  var WINDOWS_COMPUTER_CLASS = "System.Library!System.Computer";
+  var defaultDays = 3;
+  var maxGroupsToDisplay = 500;
+  var groupNamePrefix = "";
+  var groupNameContains = "";
+  var AUTOLOAD_DEBOUNCE_MS = 350;
+  const ALL_WINDOWS_GROUP_ID = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+
+  var groupsAll = [];
+  var computersAll = [];
+  var counterMapByObject = {};
+  var currentChart = null;
+  var computerSelectExpanded = false;
+  var allComputersMap = {};
+  var autoTimer=null;
+
+  // Guardrail for multi-instance counters in Small Multiples
+  var MAX_SM_LINES_PER_CELL = 12;
+
+  // -------------------------------------------------
+  // Performance request guard (prevents request floods)
+  // -------------------------------------------------
+  var perfReqSeq = 0;
+  var activePerfXhrs = [];
+
+  function abortActivePerfRequests(){
+    try{
+      activePerfXhrs.forEach(function(x){ try{ if(x && x.readyState !== 4) x.abort(); }catch(e){} });
+    }finally{
+      activePerfXhrs = [];
+    }
+  }
+
+  // Run async jobs with a concurrency limit (collects results, does not fail-fast)
+  function runJobsWithLimit(jobs, limit, worker){
+    limit = Math.max(1, Number(limit)||1);
+    return new Promise(function(resolve){
+      var i=0, inFlight=0;
+      var results = new Array(jobs.length);
+
+      function launch(){
+        while(inFlight < limit && i < jobs.length){
+          (function(idx){
+            inFlight++;
+            var job = jobs[idx];
+
+            Promise.resolve()
+              .then(function(){ return worker(job); })
+              .then(function(val){ results[idx] = { ok:true, value:val, job:job }; })
+              .catch(function(err){ results[idx] = { ok:false, error:err, job:job }; })
+              .finally(function(){
+                inFlight--;
+                if (i >= jobs.length && inFlight === 0) resolve(results);
+                else launch();
+              });
+          })(i);
+          i++;
+        }
+      }
+      if (!jobs.length) return resolve([]);
+      launch();
+    });
+  }
+
+  function escapeHtml(str){
+    return String(str)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  }
+  function pad2(v){return (v<10?"0":"")+v;}
+  function formatDateTimeLocal(d){
+    return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())+
+           "T"+pad2(d.getHours())+":"+pad2(d.getMinutes());
+  }
+  function formatHuman(d){
+    return pad2(d.getDate())+"."+pad2(d.getMonth()+1)+"."+d.getFullYear()+" "+pad2(d.getHours())+":"+pad2(d.getMinutes());
+  }
+  function convertUTCDateToLocalDate(date){
+    var offsetMs = date.getTimezoneOffset()*1000;  // intentionally unchanged here
+    return new Date(date.getTime()-offsetMs);
+  }
+  function setMessage(text,isError){
+    $("#messageLine").toggleClass("is-error",!!isError).text(text||"");
+  }
+  function ajaxJson(url,method,data){
+    return $.ajax({
+      url:url,
+      type:method,
+      headers:requestHeaders,
+      contentType:"application/json; charset=utf-8",
+      dataType:"json",
+      processData:false,
+      data:data?JSON.stringify(data):null
+    });
+  }
+  function buildGroupCriteria(){
+    if (groupNamePrefix && groupNamePrefix.trim()){
+      var p = groupNamePrefix.trim().replace(/'/g,"''");
+      return "DisplayName LIKE '"+p+"%'";
+    }
+    if (groupNameContains && groupNameContains.trim()){
+      var c = groupNameContains.trim().replace(/'/g,"''");
+      return "DisplayName LIKE '%"+c+"%'";
+    }
+    return "DisplayName LIKE '%'";
+  }
+  function extractGroupScope(resp){
+    if (!resp) return [];
+    if (Array.isArray(resp)) return resp;
+    if (Array.isArray(resp.scopeDatas)) return resp.scopeDatas;
+    if (Array.isArray(resp.scopeData)) return resp.scopeData;
+    if (Array.isArray(resp.rows)) return resp.rows;
+    if (Array.isArray(resp.value)) return resp.value;
+    return [];
+  }
+  function sortGroups(scope){
+    return (scope || []).slice().sort(function(a,b){
+      var ad = ((a && (a.displayName || a.fullName || a.name || a.id)) || "").toLowerCase();
+      var bd = ((b && (b.displayName || b.fullName || b.name || b.id)) || "").toLowerCase();
+      return ad < bd ? -1 : (ad > bd ? 1 : 0);
+    });
+  }
+
+  // --- Composite key helpers: "ObjectType||CounterName"
+  function splitObjCounterKey(key){
+    var parts = String(key||"").split("||");
+    return { obj: parts[0] || "", cn: parts[1] || "" };
+  }
+  function formatKeyLabel(key){
+    var p = splitObjCounterKey(key);
+    return (p.obj ? (p.obj + " | ") : "") + p.cn;
+  }
+
+  function isDriveLike(s){
+    return typeof s==="string" && /^[A-Z]:$/i.test(s.trim());
+  }
+
+  
+  function findDriveInText(s){
+    var t = String(s||"");
+    var m = t.match(/([A-Z]:)/i);
+    return m ? m[1].toUpperCase() : "";
+  }
+function isPercentCounter(counterName){
+    var s=(counterName||"").toLowerCase();
+    return (s.indexOf("%")!==-1 || s.indexOf("percent")!==-1);
+  }
+  function getYAxisSuffix(counterName){
+    return isPercentCounter(counterName) ? " %" : "";
+  }
+  function formatLastValue(v, counterName){
+    if (v==null || isNaN(v)) return "–";
+    if (isPercentCounter(counterName)) return Math.round(v).toString()+" %";
+    try { return Math.round(v).toLocaleString(); } catch(e){ return String(Math.round(v)); }
+  }
+  function decimatePoints(points, maxPoints){
+    if (!points || points.length <= maxPoints) return points || [];
+    var step = Math.ceil(points.length / maxPoints);
+    var out = [];
+    for (var i=0; i<points.length; i+=step) out.push(points[i]);
+    if (out.length && out[out.length-1].x !== points[points.length-1].x) out.push(points[points.length-1]);
+    return out;
+  }
+  function axisTickSpec(startDate, endDate){
+    var ms = Math.max(0, endDate - startDate);
+    var hours = ms / 36e5;
+    if (hours <= 6)   return { intervalType:"minute", interval:15 };
+    if (hours <= 12)  return { intervalType:"minute", interval:30 };
+    if (hours <= 24)  return { intervalType:"hour",   interval:1  };
+    if (hours <= 72)  return { intervalType:"hour",   interval:2  };
+    if (hours <= 168) return { intervalType:"hour",   interval:4  };
+    if (hours <= 336) return { intervalType:"hour",   interval:6  };
+    return            { intervalType:"day",           interval:1  };
+  }
+  function computeAxisInterval(startDate,endDate){
+    var ms=Math.max(0,endDate-startDate);
+    var hours=ms/36e5;
+    if (hours<=6)   return {tickIntervalType:"minute",tickInterval:15,labelEvery:2,labelFormat:"HH:mm"};
+    if (hours<=12)  return {tickIntervalType:"minute",tickInterval:30,labelEvery:2,labelFormat:"HH:mm"};
+    if (hours<=24)  return {tickIntervalType:"hour",  tickInterval:1, labelEvery:2,labelFormat:"DD.MM HH:mm"};
+    if (hours<=72)  return {tickIntervalType:"hour",  tickInterval:2, labelEvery:3,labelFormat:"DD.MM HH:mm"};
+    if (hours<=168) return {tickIntervalType:"hour",  tickInterval:4, labelEvery:3,labelFormat:"DD.MM HH:mm"};
+    if (hours<=336) return {tickIntervalType:"hour",  tickInterval:6, labelEvery:4,labelFormat:"DD.MM HH:mm"};
+    return            {tickIntervalType:"day",   tickInterval:1, labelEvery:1,labelFormat:"DD.MM.YYYY"};
+  }
+
+  function getGroupName(gid){
+    if (!gid) return "";
+    var g=(groupsAll||[]).find(x=>x&&x.id===gid);
+    return (g && (g.displayName||g.fullName)) ? (g.displayName||g.fullName) : ($("#groupSelect option:selected").text()||gid);
+  }
+  function getComputerName(cid){
+    if (!cid) return "";
+    var c = (computersAll||[]).find(x=>x && x.id===cid)
+            || (allComputersMap[cid] ? allComputersMap[cid] : null);
+    if (c && (c.displayname || c.path)){
+      return c.displayname || c.path;
+    }
+    return cid;
+  }
+
+  function updateSummary(){
+    var gid=$("#groupSelect").val();
+    var cids=$("#computerSelect").val()||[];
+    var objs=($("#objectTypeSelect").val()||[]).filter(Boolean);
+    var keys=$("#counterSelect").val()||[];
+    var startStr=$("#startDateTime").val();
+    var endStr=$("#endDateTime").val();
+    var start=startStr?new Date(startStr):null;
+    var end=endStr?new Date(endStr):null;
+    var pieces=[];
+    if (gid) pieces.push("Group: "+getGroupName(gid));
+    if (cids.length){
+      pieces.push("Computer: "+cids.map(getComputerName).join(", "));
+    }
+    if (objs.length && keys.length){
+      pieces.push("Object type: "+objs.join(", "));
+      pieces.push("Counter: "+keys.map(formatKeyLabel).join(", "));
+    }
+    if (start && !isNaN(start.getTime()) && end && !isNaN(end.getTime())){
+      pieces.push("Range: "+formatHuman(start)+" – "+formatHuman(end));
+    }
+    var tf=($("#targetSearch").val()||"").trim();
+    if (tf) pieces.push("Filter: "+tf);
+    $("#summaryLine").text(pieces.length?pieces.join(" | "):"Select Group → Computer → Object type → Counter.");
+  }
+
+  function selectionsReady(){
+    if (!($("#computerSelect").val()||[]).length) return false;
+
+    var objs=$("#objectTypeSelect").val()||[];
+    objs = objs.filter(Boolean);
+    if (!objs.length) return false;
+
+    if (!($("#counterSelect").val()||[]).length) return false;
+
+    if ($("#instanceWrap").is(":visible")){
+      var v=$("#instanceSelect").val();
+      if (!v) return false;
+    }
+    return true;
+  }
+  function scheduleAutoLoad(){
+    updateSummary();
+    if (!selectionsReady()) return;
+    clearTimeout(autoTimer);
+    autoTimer=setTimeout(function(){ loadAndRender(); },AUTOLOAD_DEBOUNCE_MS);
+  }
+
+  function initDays(){
+    var $d=$("#daysSelect").empty();
+    for (var i=1;i<=90;i++) $d.append($("<option>",{value:i,text:i+" day"+(i>1?"s":"")}));
+    $d.val(defaultDays);
+  }
+  function initDates(){
+    var now=new Date();
+    var start=new Date(now.getTime()-defaultDays*24*60*60*1000);
+    $("#startDateTime").val(formatDateTimeLocal(start));
+    $("#endDateTime").val(formatDateTimeLocal(now));
+  }
+  function syncDatesFromDays(){
+    var days=parseInt($("#daysSelect").val(),10);
+    if (isNaN(days)||days<1) return;
+    var endStr=$("#endDateTime").val();
+    var end=endStr?new Date(endStr):new Date();
+    if (isNaN(end.getTime())) end=new Date();
+    var start=new Date(end.getTime()-days*24*60*60*1000);
+    $("#startDateTime").val(formatDateTimeLocal(start));
+  }
+
+  function loadGroups(){
+    $("#groupSelect").prop("disabled",true).empty()
+      .append($("<option>",{value:"",text:"Loading groups…"}));
+    setMessage("Loading groups…",false);
+    updateSummary();
+
+    var criteria=buildGroupCriteria();
+    function tryArray(c){return ajaxJson("/OperationsManager/data/scomGroups","POST",[c]);}
+    function tryString(c){
+      return $.ajax({url:"/OperationsManager/data/scomGroups",type:"POST",headers:requestHeaders,
+        contentType:"application/json; charset=utf-8",dataType:"json",data:JSON.stringify(c)});
+    }
+    function tryForm(c){
+      return $.ajax({url:"/OperationsManager/data/scomGroups",type:"POST",headers:requestHeaders,
+        contentType:"application/x-www-form-urlencoded; charset=UTF-8",dataType:"json",data:{criteria:c}});
+    }
+    function requestGroups(c){
+      return tryArray(c).catch(function(){ return tryString(c); }).catch(function(){ return tryForm(c); });
+    }
+    function populateGroups(resp){
+      var scope = extractGroupScope(resp).filter(function(x){ return x && x.id; });
+      scope = sortGroups(scope);
+      var total = scope.length;
+      if (maxGroupsToDisplay>0 && scope.length>maxGroupsToDisplay) scope=scope.slice(0,maxGroupsToDisplay);
+
+      var hasFilter = !!((groupNamePrefix && groupNamePrefix.trim()) || (groupNameContains && groupNameContains.trim()));
+      if (!scope.length && hasFilter){
+        setMessage("No groups matched the configured filter. Retrying without a group filterâ€¦",false);
+        requestGroups("DisplayName LIKE '%'").done(populateGroups).fail(function(xhr){
+          $("#groupSelect").prop("disabled",false).empty()
+            .append($("<option>",{value:"",text:"Failed (HTTP "+xhr.status+")"}));
+          setMessage("Failed to load groups. HTTP "+xhr.status,true);
+        });
+        return;
+      }
+
+      groupsAll=scope;
+      var $g=$("#groupSelect").empty();
+      $g.append($("<option>",{value:"",text:"-- Select a group --"}));
+      scope.forEach(function(g){ $g.append($("<option>",{value:g.id,text:g.displayName||g.fullName||g.name||g.id})); });
+      $("#groupSelect").prop("disabled",false);
+      setMessage("Groups loaded: "+total+".",false);
+      updateSummary();
+      loadAllComputers();
+    }
+    return requestGroups(criteria).done(populateGroups).fail(function(xhr){
+      $("#groupSelect").prop("disabled",false).empty()
+        .append($("<option>",{value:"",text:"Failed (HTTP "+xhr.status+")"}));
+      setMessage("Failed to load groups. HTTP "+xhr.status,true);
+    });
+  }
+
+  function storeComputers(rows){
+    rows.forEach(c=>{
+      if (!c || !c.id) return;
+      allComputersMap[c.id]=c;
+    });
+  }
+
+  function loadAllComputers(){
+    setMessage("Lade Computer aller Gruppen…",false);
+    $("#computerSelect").prop("disabled",true).empty()
+        .append($("<option>",{value:"",text:"Loading computers…"}));
+
+    var promises = groupsAll.map(g => {
+      var payload = { classId: WINDOWS_COMPUTER_CLASS, objectIds: {}, displayColumns: ["id","displayname","path"] };
+      payload.objectIds[g.id] = -1;
+      return ajaxJson("/OperationsManager/data/state","POST",payload)
+        .then(resp => {
+          var rows = (resp && resp.rows) || [];
+          rows.sort((a,b)=> (a.displayname||"").toLowerCase().localeCompare((b.displayname||"").toLowerCase()));
+          storeComputers(rows);
+          return rows.length;
+        })
+        .catch(() => 0);
+    });
+
+    Promise.all(promises).then(counts => {
+      var total = counts.reduce((s,n)=>s+n,0);
+      setMessage("Computer geladen: "+total+" (aus "+groupsAll.length+" Gruppen).",false);
+      var list = Object.values(allComputersMap);
+      list.sort((a,b)=> (a.displayname||"").toLowerCase().localeCompare((b.displayname||"").toLowerCase()));
+      populateComputerSelect(list);
+      $("#computerSelect").prop("disabled",false);
+      updateSummary();
+    }).catch(err => {
+      setMessage("Unerwarteter Fehler beim Laden der Computer.",true);
+      console.error(err);
+    });
+  }
+
+  function loadComputersForGroup(groupId){
+    $("#computerSelect").prop("disabled",true).empty()
+      .append($("<option>",{value:"",text:"Loading computers…"}));
+    setMessage("Loading computers…",false);
+    updateSummary();
+    var payload={classId:WINDOWS_COMPUTER_CLASS,objectIds:{},displayColumns:["id","displayname","path"]};
+    payload.objectIds[groupId] = -1;
+    ajaxJson("/OperationsManager/data/state","POST",payload).done(function(resp){
+      var rows=(resp && resp.rows)||[];
+      rows=rows.filter(r=>r && r.id);
+      rows.sort((a,b)=> (a.displayname||"").toLowerCase().localeCompare((b.displayname||"").toLowerCase()));
+      computersAll=rows;
+      applyComputerFilterAndPopulate();
+      $("#computerSelect").prop("disabled",false);
+      setMessage("Computers loaded: "+rows.length+".",false);
+      updateSummary();
+    }).fail(function(xhr){
+      $("#computerSelect").prop("disabled",false).empty()
+        .append($("<option>",{value:"",text:"Failed (HTTP "+xhr.status+")"}));
+      setMessage("Failed to load computers. HTTP "+xhr.status,true);
+    });
+  }
+
+  function populateComputerSelect(list){
+    const $c=$("#computerSelect").empty();
+    $c.append($("<option>",{value:"",text:"-- Select a computer --"}));
+    list.forEach(c=>{
+      const label=c.displayname||c.path||c.id;
+      $c.append($("<option>",{value:c.id,text:label}));
+    });
+  }
+
+  function applyComputerFilterAndPopulate(){
+    var term=($("#computerSearch").val()||"").toLowerCase().trim();
+    var list=computersAll;
+    if (term){
+      list=computersAll.filter(c=>{
+        var dn=(c.displayname||"").toLowerCase();
+        var p=(c.path||"").toLowerCase();
+        return dn.includes(term)||p.includes(term);
+      });
+    }
+    populateComputerSelect(list);
+  }
+
+  function closeCounterDropdown(){ $("#counterDropdownPanel").removeClass("is-open"); }
+
+  function setCounterDropdownLabel(){
+    var vals=$("#counterSelect").val()||[];
+    if (!vals.length) $("#counterDropdownLabel").text("-- Select counter(s) --");
+    else if (vals.length===1) $("#counterDropdownLabel").text(formatKeyLabel(vals[0]));
+    else $("#counterDropdownLabel").text(vals.length+" ausgewählt");
+  }
+
+  function populateCounterDropdownForObjectType(){
+    var objs = ($("#objectTypeSelect").val() || []).filter(Boolean);
+
+    $("#counterSelect").empty().val([]);
+    $("#counterDropdownPanel").empty();
+    setCounterDropdownLabel();
+
+    $("#instanceWrap").hide();
+    $("#instanceSelect").empty();
+
+    if (!objs.length){
+      $("#counterDropdownPanel").html('<div class="loading">-- Select object type first --</div>');
+      return;
+    }
+
+    var $panel=$("#counterDropdownPanel").empty();
+    var $hidden=$("#counterSelect").empty();
+
+    objs
+      .slice()
+      .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}))
+      .forEach(function(obj){
+        if (!counterMapByObject[obj]) return;
+
+        var counterNames = Object.keys(counterMapByObject[obj])
+          .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+
+        if (!counterNames.length) return;
+
+        $panel.append(
+          $('<div>')
+            .css({padding:"6px 6px 4px 6px", fontWeight:"700", color:"#333"})
+            .text(obj)
+        );
+
+        counterNames.forEach(function(cn, idx){
+          var key = obj + "||" + cn;
+
+          $hidden.append($("<option>",{value:key,text:cn}));
+
+          var id="ctr_cb_"+obj.replace(/[^A-Za-z0-9_-]/g,"_")+"_"+idx;
+          var $row=$('<div class="dd-item">');
+          var $cb=$('<input type="checkbox">').attr("id",id).attr("data-key",key);
+          var $lab=$('<label>').attr("for",id).text(cn);
+          $row.append($cb).append($lab);
+          $panel.append($row);
+        });
+
+        $panel.append($('<div>').css({height:"6px"}));
+      });
+
+    setCounterDropdownLabel();
+  }
+
+  function populateInstanceIfNeeded(){
+    var keys=$("#counterSelect").val()||[];
+
+    $("#instanceWrap").hide();
+    $("#instanceSelect").empty();
+
+    if (keys.length!==1) return;
+
+    var p = splitObjCounterKey(keys[0]);
+    if (!p.obj || !p.cn) return;
+
+    var set = (counterMapByObject[p.obj] && counterMapByObject[p.obj][p.cn]) ? counterMapByObject[p.obj][p.cn] : null;
+    if (!set) return;
+
+    var instances = Array.from(set).map(x=>x==null?"":String(x));
+    if (instances.length<=1) return;
+
+    instances.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+    var $i=$("#instanceSelect").empty();
+    $i.append($("<option>",{value:"all",text:"All"}));
+    instances.forEach(inst=> $i.append($("<option>",{value:inst,text:(inst===""?"(empty)":inst)})) );
+    $i.val("all");
+    $("#instanceWrap").show();
+  }
+
+  function syncHiddenCounterSelectFromCheckboxes(){
+    var selected=[];
+    $("#counterDropdownPanel input[type=checkbox]:checked").each(function(){
+      selected.push($(this).attr("data-key"));
+    });
+
+    // Keep stable order based on hidden select option order
+    var all=$("#counterSelect option").map(function(){return this.value;}).get();
+    selected.sort((a,b)=> all.indexOf(a)-all.indexOf(b));
+
+    $("#counterSelect").val(selected);
+    setCounterDropdownLabel();
+    populateInstanceIfNeeded();
+    updateSummary();
+
+    clearTimeout(autoTimer);
+    setTimeout(function(){ scheduleAutoLoad(); }, 0);
+  }
+
+  function loadCountersForSelectedComputers(ids){
+    counterMapByObject={};
+
+    $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"Loading…"})).prop("disabled",true);
+
+    $("#counterSelect").empty().val([]);
+    $("#counterDropdownPanel").empty();
+    setCounterDropdownLabel();
+    $("#instanceWrap").hide();
+    $("#instanceSelect").empty();
+
+    setMessage("Loading counters…",false);
+    updateSummary();
+
+    const ajaxCalls = (ids||[]).map(id => $.ajax({
+      url:"/OperationsManager/data/performanceCounters/"+id,
+      type:"GET",
+      headers:requestHeaders,
+      dataType:"json"
+    }).then(resp => {
+      const rows = (resp && resp.rows) || [];
+      rows.filter(r=>r && r.objectname && r.countername!=null).forEach(r => {
+        const obj = r.objectname,
+              ctr = r.countername,
+              inst = (r.instancename == null) ? "" : String(r.instancename);
+        if (!counterMapByObject[obj]) counterMapByObject[obj] = {};
+        if (!counterMapByObject[obj][ctr]) counterMapByObject[obj][ctr] = new Set();
+        counterMapByObject[obj][ctr].add(inst);
+      });
+    }).catch(()=>{}));
+
+    Promise.all(ajaxCalls).then(() => {
+      const objectTypes = Object.keys(counterMapByObject)
+        .sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+      const $o = $("#objectTypeSelect").empty().prop("disabled",false);
+
+      $o.append($("<option>",{value:"",text:"-- Select object type --"}));
+      objectTypes.forEach(o => $o.append($("<option>",{value:o,text:o})));
+
+      setMessage("Counters loaded.",false);
+      updateSummary();
+    }).catch(() => {
+      setMessage("Failed to load counters.",true);
+      $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"Failed"})).prop("disabled",true);
+    });
+  }
+
+  function instanceToSendForKey(key){
+    var p = splitObjCounterKey(key);
+    var set = (counterMapByObject[p.obj] && counterMapByObject[p.obj][p.cn]) ? counterMapByObject[p.obj][p.cn] : null;
+    var instances = set ? Array.from(set).map(x=>x==null?"":String(x)) : [];
+
+    if (instances.length===1) return instances[0];
+
+    if ($("#instanceWrap").is(":visible")){
+      var v=$("#instanceSelect").val();
+      if (!v || v==="all") return "%";
+      return v;
+    }
+    return "%";
+  }
+
+  // NEW: pick instances we want to request explicitly (Small Multiples)
+  function getKnownInstancesForKey(key){
+    var p = splitObjCounterKey(key);
+    var set = (counterMapByObject[p.obj] && counterMapByObject[p.obj][p.cn]) ? counterMapByObject[p.obj][p.cn] : null;
+    if (!set) return [];
+
+    var arr = Array.from(set).map(x => x==null ? "" : String(x));
+
+    // Drop empty / totals / wildcard markers
+    arr = arr
+      .map(s => (s||"").trim())
+      .filter(s => {
+        if (!s) return false;
+        var low = s.toLowerCase();
+        if (low === "_total" || low === "total" || low === "%") return false;
+        return true;
+      });
+
+    // Prefer drive letters first for LogicalDisk
+    if ((p.obj||"").toLowerCase() === "logicaldisk"){
+      arr.sort(function(a,b){
+        var ad=isDriveLike(a), bd=isDriveLike(b);
+        if (ad && !bd) return -1;
+        if (!ad && bd) return 1;
+        return a.localeCompare(b, undefined, {sensitivity:"base"});
+      });
+    } else {
+      arr.sort((a,b)=>a.localeCompare(b, undefined, {sensitivity:"base"}));
+    }
+
+    return arr.slice(0, Math.max(1, MAX_SM_LINES_PER_CELL));
+  }
+
+  // NEW: build performanceCounters[] for one (computer, key) job
+  function buildPerfCountersForJob(key, smallMultiplesMode){
+    var p = splitObjCounterKey(key);
+    var inst = instanceToSendForKey(key);
+
+    // In Small Multiples, wildcard often collapses to a single dataset.
+    // If we know multiple instances exist, request them explicitly in the same POST.
+    if (smallMultiplesMode && (inst === "%" || inst === "*" || inst == null)){
+      var insts = getKnownInstancesForKey(key);
+      if (insts.length >= 2){
+        return insts.map(function(i){
+          return { objectname: p.obj, countername: p.cn, instancename: i };
+        });
+      }
+    }
+
+    return [{
+      objectname: p.obj,
+      countername: p.cn,
+      instancename: inst
+    }];
+  }
+
+  function extractPoints(ds, startDate, endDate){
+    var pts = [];
+    var data = ds.data || {};
+    for (var ts in data){
+      if (!data.hasOwnProperty(ts)) continue;
+      var utc = new Date(ts);
+      if (isNaN(utc.getTime())) continue;
+
+      if (utc < startDate) continue;
+      if (utc > endDate) continue;
+
+      var local = convertUTCDateToLocalDate(utc);
+      var v = Number(data[ts]);
+      if (isNaN(v)) continue;
+      pts.push({ x: local, y: v });
+    }
+    pts.sort(function(a,b){ return a.x - b.x; });
+    return pts;
+  }
+
+  function findLegendRow(ds, legendRows){
+    if (!legendRows || !legendRows.length) return null;
+    for (var i=0;i<legendRows.length;i++){
+      if (legendRows[i] && legendRows[i].id === ds.id) return legendRows[i];
+    }
+    return null;
+  }
+
+  // NEW: return all datasets (optionally filtered by targetTerm)
+    // Return all datasets (optionally filtered by targetTerm) and include dataset index
+  function getDatasetsToPlot(res, targetTerm){
+    var datasets = (res && res.datasets) ? res.datasets : [];
+    if (!datasets.length) return [];
+
+    var legendRows = (res && res.legends && res.legends.rows) ? res.legends.rows : [];
+    var term = String(targetTerm||"").toLowerCase().trim();
+
+    var out=[];
+    datasets.forEach(function(ds, idx){
+      var leg=findLegendRow(ds, legendRows) || {};
+      if (term){
+        var hay=(String(leg.instance||leg.instancename||"")+" "+String(leg.path||"")+" "+String(leg.target||"")).toLowerCase().trim();
+        // If the API doesn't return legend fields for this dataset, do not drop it due to filter.
+        if (hay && hay.indexOf(term)===-1) return;
+      }
+      out.push({ ds: ds, leg: leg, idx: idx });
+    });
+
+    // If filter removed everything, fall back to all datasets (better than rendering nothing)
+    if (term && !out.length){
+      datasets.forEach(function(ds, idx){
+        var leg=findLegendRow(ds, legendRows) || {};
+        out.push({ ds: ds, leg: leg, idx: idx });
+      });
+    }
+
+    return out;
+  }
+
+    function getDatasetInstanceText(ds, leg, reqInst){
+    var inst = (leg && (leg.instance||leg.instancename)!=null) ? (leg.instance||leg.instancename) : (ds.instance||ds.instancename);
+    inst = (inst==null) ? "" : String(inst).trim();
+
+    // If the API doesn't provide a usable instance label, fall back to what we requested.
+    if ((!inst || inst==="%" || inst.toLowerCase()==="_total") && reqInst!=null){
+      var r = String(reqInst).trim();
+      if (r && r!=="%" && r.toLowerCase()!=="_total") inst = r;
+    }
+
+    
+
+  function extractLogicalDiskDrive(inst, leg, ds, reqInst){
+    var cand = [];
+    if (inst != null) cand.push(String(inst));
+    if (reqInst != null) cand.push(String(reqInst));
+    if (leg){
+      if (leg.instance!=null) cand.push(String(leg.instance));
+      if (leg.instancename!=null) cand.push(String(leg.instancename));
+      if (leg.target!=null) cand.push(String(leg.target));
+      if (leg.path!=null) cand.push(String(leg.path));
+    }
+    if (ds){
+      if (ds.instance!=null) cand.push(String(ds.instance));
+      if (ds.instancename!=null) cand.push(String(ds.instancename));
+      if (ds.path!=null) cand.push(String(ds.path));
+      if (ds.target!=null) cand.push(String(ds.target));
+    }
+
+    for (var i=0;i<cand.length;i++){
+      var s = (cand[i]||"").trim();
+      if (!s) continue;
+      if (isDriveLike(s)) return s.toUpperCase();
+      var d = findDriveInText(s);
+      if (d) return d;
+    }
+    return "";
+  }
+
+  function getMatrixInstKeyAndLabel(p, inst, leg, ds, reqInst, datasetIdx){
+    var obj = (p.obj||"").toLowerCase();
+
+    // LogicalDisk: prefer drive (C:, D:, ...)
+    if (obj === "logicaldisk"){
+      var drive = extractLogicalDiskDrive(inst, leg, ds, reqInst);
+      if (drive) return { key: drive, label: drive };
+    }
+
+    // General: use instance if present
+    var s = (inst==null) ? "" : String(inst).trim();
+    if (!s || s==="%" || s.toLowerCase()==="_total"){
+      s = (reqInst==null) ? "" : String(reqInst).trim();
+    }
+    if (s && s!=="%" && s.toLowerCase()!=="_total"){
+      return { key: s, label: s };
+    }
+
+    // Try target/path for uniqueness/label
+    var t = (leg && leg.target!=null) ? String(leg.target).trim() : "";
+    if (!t && leg && leg.path!=null) t = String(leg.path).trim();
+    if (!t && ds && ds.target!=null) t = String(ds.target).trim();
+    if (!t && ds && ds.path!=null) t = String(ds.path).trim();
+    if (t) return { key: t, label: t };
+
+    // Final fallback: never collapse multiple datasets into one
+    var fallback = (ds && ds.id!=null) ? String(ds.id) : ("ds#"+datasetIdx);
+    return { key: fallback, label: fallback };
+  }
+return inst;
+  }
+
+  function buildSeriesName(cid, key, p, leg, ds, keysLen){
+    var computerName=getComputerName(cid);
+    var inst=getDatasetInstanceText(ds, leg);
+
+    if ((p.obj||"").toLowerCase()==="logicaldisk"){
+      var drive="";
+      if (isDriveLike(inst)) drive=inst.trim();
+      if (!drive && leg && isDriveLike(String(leg.target||""))) drive=String(leg.target||"").trim();
+      if (!drive && leg && isDriveLike(String(leg.path||""))) drive=String(leg.path||"").trim();
+
+      if (keysLen===1){
+        if (drive) return computerName+" - "+drive;
+        if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return computerName+" - "+inst;
+        return computerName;
+      }else{
+        var base = formatKeyLabel(key) + " — " + computerName;
+        if (drive) return base+" - "+drive;
+        if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return base+" - "+inst;
+        return base;
+      }
+    }
+
+    if (keysLen===1){
+      if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return computerName+" ("+inst+")";
+      return computerName;
+    }else{
+      var base2 = formatKeyLabel(key) + " — " + computerName;
+      if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return base2+" ("+inst+")";
+      return base2;
+    }
+  }
+
+  function renderCombinedChart(titleText, startDate, endDate, series){
+    $("#chartContainer").removeClass("sm-mode").empty();
+
+    var axis=computeAxisInterval(startDate,endDate);
+    var fontFamily="Segoe UI, Arial, Helvetica, sans-serif";
+
+    var hasSecondary = series.some(s=>s.axisYType==="secondary");
+
+    var options={
+      animationEnabled:true,
+      theme:"light2",
+      zoomEnabled:true,
+      title:{text:titleText,fontFamily:fontFamily,fontSize:18},
+      legend:{verticalAlign:"bottom",horizontalAlign:"center",fontFamily:fontFamily,fontSize:13},
+      axisX:{
+        title:"Date and time",titleFontFamily:fontFamily,titleFontSize:14,
+        labelFontFamily:fontFamily,labelFontSize:12,labelAutoFit:false,labelAngle:0,
+        intervalType:axis.tickIntervalType,interval:axis.tickInterval,
+        minimum:startDate,maximum:endDate,
+        tickLength:6,tickThickness:1,
+        gridThickness:1,gridColor:"rgba(0,0,0,0.08)",gridDashType:"dash",
+        labelFormatter:(function(){
+          var tickMs=
+            axis.tickIntervalType==="minute"?axis.tickInterval*60000:
+            axis.tickIntervalType==="hour"?axis.tickInterval*3600000:
+                                          axis.tickInterval*86400000;
+          var labelEvery=Math.max(1,axis.labelEvery||1);
+          return function(e){
+            var diff=e.value-startDate;
+            if (diff<0) return "";
+            var tickIndex=Math.round(diff/tickMs);
+            if (tickIndex%labelEvery!==0) return "";
+            return CanvasJS.formatDate(e.value,axis.labelFormat||"DD.MM HH:mm");
+          };
+        })(),
+        crosshair:{enabled:true,snapToDataPoint:true}
+      },
+      axisY:{
+        title:"Value",titleFontFamily:fontFamily,titleFontSize:14,
+        labelFontFamily:fontFamily,labelFontSize:12,
+        gridThickness:1,gridColor:"rgba(0,0,0,0.08)",gridDashType:"dash",
+        crosshair:{enabled:true,snapToDataPoint:true}
+      },
+      toolTip:{fontFamily:fontFamily,fontSize:13},
+      data:series
+    };
+
+    if (hasSecondary){
+      options.axisY2={
+        title:"Percent",
+        titleFontFamily:fontFamily,titleFontSize:14,
+        labelFontFamily:fontFamily,labelFontSize:12,
+        suffix:" %",
+        gridThickness:0,
+        crosshair:{enabled:true,snapToDataPoint:true}
+      };
+    }
+
+    currentChart=new CanvasJS.Chart("chartContainer",options);
+    currentChart.render();
+    $("#resetZoomBtn").prop("disabled",false);
+  }
+
+  // UPDATED: allow custom height
+  function renderSparkline(containerId, points, suffix, startDate, endDate, axisSpec, height){
+    if (!points || !points.length) return;
+
+    var fontFamily = "Segoe UI, Arial, Helvetica, sans-serif";
+    var chart = new CanvasJS.Chart(containerId, {
+      animationEnabled: false,
+      theme: "light2",
+      backgroundColor: "transparent",
+      height: height || 88,
+      axisX: {
+        minimum: startDate,
+        maximum: endDate,
+        intervalType: axisSpec.intervalType,
+        interval: axisSpec.interval,
+        lineThickness: 0,
+        tickLength: 0,
+        labelFontSize: 0,
+        gridThickness: 1,
+        gridColor: "rgba(0,0,0,0.08)",
+        gridDashType: "dash",
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+      axisY: {
+        lineThickness: 0,
+        tickLength: 0,
+        labelFontSize: 0,
+        gridThickness: 1,
+        gridColor: "rgba(0,0,0,0.08)",
+        gridDashType: "dash",
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+      toolTip: {
+        fontFamily: fontFamily,
+        fontSize: 12,
+        content: "<b>{x:DD.MM.YYYY HH:mm}</b><br/>{y}" + (suffix ? suffix : "")
+      },
+      data: [{
+        type: "spline",
+        markerSize: 0,
+        lineThickness: 2,
+        dataPoints: points
+      }]
+    });
+    chart.render();
+  }
+
+  // NEW: multi-series sparkline (one line per instance, CanvasJS auto-colors)
+  function renderSparklineMulti(containerId, seriesList, suffix, startDate, endDate, axisSpec, height){
+    if (!seriesList || !seriesList.length) return;
+
+    var fontFamily = "Segoe UI, Arial, Helvetica, sans-serif";
+    var dataSeries = seriesList.map(function(s){
+      return {
+        type: "spline",
+        markerSize: 0,
+        lineThickness: 2,
+        showInLegend: false,
+        name: s.name || "",
+        dataPoints: s.points || []
+      };
+    }).filter(function(s){ return s.dataPoints && s.dataPoints.length; });
+
+    if (!dataSeries.length) return;
+
+    var chart = new CanvasJS.Chart(containerId, {
+      animationEnabled: false,
+      theme: "light2",
+      backgroundColor: "transparent",
+      height: height || 88,
+      axisX: {
+        minimum: startDate,
+        maximum: endDate,
+        intervalType: axisSpec.intervalType,
+        interval: axisSpec.interval,
+        lineThickness: 0,
+        tickLength: 0,
+        labelFontSize: 0,
+        gridThickness: 1,
+        gridColor: "rgba(0,0,0,0.08)",
+        gridDashType: "dash",
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+      axisY: {
+        lineThickness: 0,
+        tickLength: 0,
+        labelFontSize: 0,
+        gridThickness: 1,
+        gridColor: "rgba(0,0,0,0.08)",
+        gridDashType: "dash",
+        crosshair: { enabled: true, snapToDataPoint: true }
+      },
+      toolTip: {
+        shared: true,
+        fontFamily: fontFamily,
+        fontSize: 12,
+        contentFormatter: function(e){
+          var entries = (e && e.entries) ? e.entries : [];
+          if (!entries.length) return "";
+          var x = entries[0].dataPoint && entries[0].dataPoint.x ? entries[0].dataPoint.x : null;
+          var header = x ? ("<b>"+CanvasJS.formatDate(x,"DD.MM.YYYY HH:mm")+"</b>") : "<b>Value</b>";
+          var lines = entries.map(function(en){
+            var n = (en.dataSeries && en.dataSeries.name) ? en.dataSeries.name : "";
+            var y = (en.dataPoint && en.dataPoint.y!=null) ? en.dataPoint.y : null;
+            var yTxt = (y==null || isNaN(y)) ? "–" : (function(){
+              try { return Math.round(y).toLocaleString(); } catch(_){ return String(Math.round(y)); }
+            })();
+            return escapeHtml(n) + ": <b>" + yTxt + (suffix ? suffix : "") + "</b>";
+          });
+          return header + "<br/>" + lines.join("<br/>");
+        }
+      },
+      data: dataSeries
+    });
+    chart.render();
+  }
+
+  function instanceLabelForSM(p, inst){
+    var s = (inst==null) ? "" : String(inst);
+    s = s.trim();
+    if (!s) return "(empty)";
+    if ((p.obj||"").toLowerCase()==="logicaldisk" && isDriveLike(s)) return s;
+    return s;
+  }
+
+  // Optional: show a meaningful single number when multiple instances exist
+  function summarizeMultiInstanceLast(counterName, seriesByInst){
+    var vals = [];
+    Object.keys(seriesByInst||{}).forEach(function(k){
+      var v = seriesByInst[k] && seriesByInst[k].last;
+      if (v!=null && !isNaN(v)) vals.push(Number(v));
+    });
+    if (!vals.length) return null;
+
+    var n = (counterName||"").toLowerCase();
+    var preferMin =
+      n.indexOf("free")!==-1 ||
+      n.indexOf("available")!==-1 ||
+      n.indexOf("idle")!==-1 ||
+      n.indexOf("remaining")!==-1 ||
+      n.indexOf("space")!==-1;
+
+    if (preferMin){
+      return vals.reduce(function(a,b){ return Math.min(a,b); }, vals[0]);
+    }
+    return vals.reduce(function(a,b){ return Math.max(a,b); }, vals[0]);
+  }
+
+  // UPDATED: Small Multiples draws multi-instance counters as multi-line sparklines in ONE graph
+    function renderSmallMultiples(selectedCids, keys, matrix, startDate, endDate){
+    $("#resetZoomBtn").prop("disabled",true);
+    $("#chartContainer").addClass("sm-mode").empty();
+
+    var $root=$('<div class="sm-root">');
+    $("#chartContainer").append($root);
+
+    var axisSpec = axisTickSpec(startDate, endDate);
+
+    var sparkJobs = [];
+
+    selectedCids.forEach(function(cid, idx){
+      var srvName=getComputerName(cid);
+      var hostShort=(srvName||cid).split(".")[0];
+
+      var $row=$('<div class="server-row">');
+      $row.css("grid-template-columns","220px repeat("+keys.length+", minmax(260px, 1fr))");
+
+      var $srv=$('<div class="srv">');
+      $srv.append($('<div class="host">').text(hostShort));
+      $srv.append($('<div class="friendly">').text(srvName||cid));
+      $row.append($srv);
+
+      keys.forEach(function(key, kIdx){
+        var p = splitObjCounterKey(key);
+        var cell = (matrix[cid] && matrix[cid][key]) ? matrix[cid][key] : null;
+
+        var labelText = (p.obj ? (p.obj + " - " + p.cn) : p.cn);
+        var $m=$('<div class="metric">');
+
+        var sparkId="sp_"+idx+"_"+kIdx;
+        var $spark=$('<div class="spark">').attr("id",sparkId);
+
+        var valueText="–";
+        var extraNote=null;
+
+        if (cell && cell.seriesByInst){
+          // Convert to sortable entries
+          var entries = Object.keys(cell.seriesByInst).map(function(k){
+            var s = cell.seriesByInst[k] || {};
+            return { key: k, label: (s.label||k), last: s.last, points: s.points||[] };
+          });
+
+          // Sort: drive letters first when LogicalDisk, then label
+          if ((p.obj||"").toLowerCase()==="logicaldisk"){
+            entries.sort(function(a,b){
+              var ad=isDriveLike(a.label), bd=isDriveLike(b.label);
+              if (ad && !bd) return -1;
+              if (!ad && bd) return 1;
+              return a.label.localeCompare(b.label, undefined, {sensitivity:"base"});
+            });
+          } else {
+            entries.sort(function(a,b){
+              return a.label.localeCompare(b.label, undefined, {sensitivity:"base"});
+            });
+          }
+
+          if (entries.length===1){
+            valueText = formatLastValue(entries[0].last, p.cn);
+            if (entries[0].points && entries[0].points.length){
+              sparkJobs.push({
+                id: sparkId,
+                mode: "single",
+                points: entries[0].points,
+                suffix: getYAxisSuffix(p.cn),
+                height: 88
+              });
+            }
+          } else if (entries.length>1){
+            var total = entries.length;
+            var shown = entries.slice(0, Math.max(1, MAX_SM_LINES_PER_CELL));
+            var hiddenCount = Math.max(0, total - shown.length);
+            if (hiddenCount>0) extraNote = "… (+"+hiddenCount+" more)";
+
+            var summary = summarizeMultiInstanceLast(p.cn, cell.seriesByInst);
+            valueText = (summary==null) ? (total+" inst") : (formatLastValue(summary, p.cn) + " ("+total+")");
+
+            var seriesList = shown.map(function(e){
+              return { name: e.label, points: e.points };
+            }).filter(function(s){ return s.points && s.points.length; });
+
+            if (seriesList.length){
+              sparkJobs.push({
+                id: sparkId,
+                mode: "multi",
+                series: seriesList,
+                suffix: getYAxisSuffix(p.cn),
+                height: 88
+              });
+            }
+          }
+        } else if (cell && cell.points && cell.points.length){
+          valueText = formatLastValue(cell.last, p.cn);
+          sparkJobs.push({
+            id: sparkId,
+            mode: "single",
+            points: cell.points,
+            suffix: getYAxisSuffix(p.cn),
+            height: 88
+          });
+        }
+
+        var $top=$('<div class="top">');
+        $top.append($('<div class="label">').text(labelText));
+        $top.append($('<div class="value">').text(valueText));
+        $m.append($top);
+        $m.append($spark);
+        if (extraNote) $m.append($('<div class="inst-more">').text(extraNote));
+
+        $row.append($m);
+      });
+
+      $root.append($row);
+    });
+
+    setTimeout(function(){
+      sparkJobs.forEach(function(j){
+        try{
+          if (j.mode==="multi"){
+            renderSparklineMulti(j.id, j.series, j.suffix, startDate, endDate, axisSpec, j.height);
+          } else {
+            renderSparkline(j.id, j.points, j.suffix, startDate, endDate, axisSpec, j.height);
+          }
+        }catch(e){
+          console.error("Sparkline render failed for", j.id, e);
+        }
+      });
+    }, 0);
+  }
+
+  
+
+  // -------------------------------------------------------------------
+  // COMPAT: helper functions required for multi-instance Small Multiples
+  // If you copy/paste only parts of the script, missing these will cause:
+  // "extractLogicalDiskDrive is not defined" / "getMatrixInstKeyAndLabel is not defined"
+  // -------------------------------------------------------------------
+
+  // Extracts a drive label like "C:" from any of the available legend/dataset fields
+  function extractLogicalDiskDrive(inst, leg, ds, reqInst){
+    function pickDrive(v){
+      var m = String(v||"").match(/([A-Z]:)/i);
+      return m ? m[1].toUpperCase() : "";
+    }
+    var cand = [];
+
+    if (inst != null) cand.push(inst);
+    if (reqInst != null) cand.push(reqInst);
+
+    if (leg){
+      if (leg.instance!=null) cand.push(leg.instance);
+      if (leg.instancename!=null) cand.push(leg.instancename);
+      if (leg.target!=null) cand.push(leg.target);
+      if (leg.path!=null) cand.push(leg.path);
+    }
+    if (ds){
+      if (ds.instance!=null) cand.push(ds.instance);
+      if (ds.instancename!=null) cand.push(ds.instancename);
+      if (ds.target!=null) cand.push(ds.target);
+      if (ds.path!=null) cand.push(ds.path);
+    }
+
+    for (var i=0;i<cand.length;i++){
+      var d = pickDrive(cand[i]);
+      if (d) return d;
+    }
+    return "";
+  }
+
+  // Returns a stable key/label so multiple instances don't collapse into one line in Small Multiples
+  function getMatrixInstKeyAndLabel(p, inst, leg, ds, reqInst, datasetIdx){
+    var obj = (p.obj||"").toLowerCase();
+
+    // LogicalDisk: prefer drive (C:, D:, ...)
+    if (obj === "logicaldisk"){
+      var drive = extractLogicalDiskDrive(inst, leg, ds, reqInst);
+      if (drive) return { key: drive, label: drive };
+    }
+
+    // General: prefer instance (incl. requested instance)
+    var s = (inst==null) ? "" : String(inst).trim();
+    if (!s || s==="%" || s.toLowerCase()==="_total"){
+      s = (reqInst==null) ? "" : String(reqInst).trim();
+    }
+    if (s && s!=="%" && s.toLowerCase()!=="_total"){
+      return { key: s, label: s };
+    }
+
+    // Try target/path for uniqueness/label
+    var t = (leg && leg.target!=null) ? String(leg.target).trim() : "";
+    if (!t && leg && leg.path!=null) t = String(leg.path).trim();
+    if (!t && ds && ds.target!=null) t = String(ds.target).trim();
+    if (!t && ds && ds.path!=null) t = String(ds.path).trim();
+    if (t) return { key: t, label: t };
+
+    // Fallback: never collapse multiple datasets into one
+    var fallback = (ds && ds.id!=null) ? String(ds.id) : ("ds#"+datasetIdx);
+    return { key: fallback, label: fallback };
+  }
+
+  function loadAndRender(){
+    var selectedCids = $("#computerSelect").val()||[];
+    var keys = $("#counterSelect").val()||[];
+    var targetTerm = ($("#targetSearch").val()||"").toLowerCase().trim();
+    updateSummary();
+
+    if (!selectedCids.length){ setMessage("Select at least one computer.",true); return; }
+    if (!keys.length){ setMessage("Select at least one counter.",true); return; }
+
+    var startStr=$("#startDateTime").val();
+    var endStr=$("#endDateTime").val();
+    var start=startStr?new Date(startStr):null;
+    var end=endStr?new Date(endStr):null;
+    var now=new Date();
+    if (!start||isNaN(start.getTime())) start=new Date(now.getTime()-defaultDays*24*60*60*1000);
+    if (!end||isNaN(end.getTime())) end=now;
+    if (end>now) end=now;
+    if (end<start){ var t=start; start=end; end=t; }
+    var durationMinutes=Math.max(5,Math.round((now-start)/60000));
+
+    var smallMultiplesMode = (selectedCids.length>1 && keys.length>1);
+
+    // Request guard: abort previous, and ensure only latest request updates UI
+    var mySeq = ++perfReqSeq;
+    abortActivePerfRequests();
+
+    $("#refreshBtn").prop("disabled",true).text("Loading…");
+    setMessage("Loading performance data…",false);
+    $("#resetZoomBtn").prop("disabled",true);
+    currentChart=null;
+
+    // Build jobs: one POST per (computer, key). We'll execute with limited concurrency.
+    var jobs=[];
+    selectedCids.forEach(function(cid){
+      keys.forEach(function(key){
+        var pcs = buildPerfCountersForJob(key, smallMultiplesMode);
+        jobs.push({
+          cid: cid,
+          key: key,
+          requested: pcs, // keep for post-processing / labeling fallback
+          payload:{
+            id: cid,
+            performanceCounters: pcs,
+            legends:["target","path","instance","instancename","lastvalue"],
+            duration: durationMinutes
+          }
+        });
+      });
+    });
+
+    function doJob(job){
+      var xhr = ajaxJson("/OperationsManager/data/performance","POST",job.payload);
+      activePerfXhrs.push(xhr);
+      return xhr.then(function(res){
+        return {cid:job.cid, key:job.key, res:res, requested: job.requested};
+      });
+    }
+
+    var CONCURRENCY = 2;
+
+    runJobsWithLimit(jobs, CONCURRENCY, doJob).then(function(results){
+      if (mySeq !== perfReqSeq) return;
+
+      var matrix={};
+      var series=[];
+      var failCount=0;
+      var firstErr=null;
+
+      results.forEach(function(r){
+        if (!r || !r.ok){
+          failCount++;
+          if (!firstErr && r) firstErr = r.error;
+          return;
+        }
+
+        var cid=r.value.cid, key=r.value.key, res=r.value.res;
+        var requested = r.value.requested || [];
+        var p = splitObjCounterKey(key);
+
+        if (!matrix[cid]) matrix[cid]={};
+
+        var dsItems = getDatasetsToPlot(res, targetTerm);
+        if (!dsItems.length) return;
+
+        dsItems.forEach(function(item){
+          var ds=item.ds, leg=item.leg||{}, dsIdx=item.idx;
+          var reqInst = (requested[dsIdx] && requested[dsIdx].instancename!=null) ? requested[dsIdx].instancename : null;
+
+          var inst=getDatasetInstanceText(ds, leg, reqInst);
+          var pts=decimatePoints(extractPoints(ds, start, end), 220);
+          if (!pts.length) return;
+
+          if (smallMultiplesMode){
+            if (!matrix[cid][key]) matrix[cid][key] = { seriesByInst: {} };
+            var cell = matrix[cid][key];
+
+            var kl = getMatrixInstKeyAndLabel(p, inst, leg, ds, reqInst, dsIdx);
+            var instKey = kl.key;
+            var label = kl.label;
+
+            var existing = cell.seriesByInst[instKey];
+            if (!existing || (existing.points||[]).length < pts.length){
+              cell.seriesByInst[instKey] = { label: label, points: pts, last: pts[pts.length-1].y };
+            }
+            return;
+          }
+
+          var name = buildSeriesName(cid, key, p, leg, ds, keys.length);
+          series.push({
+            type:"spline",
+            showInLegend:true,
+            name:name,
+            dataPoints:pts,
+            markerSize:0,
+            lineThickness:2,
+            axisYType: isPercentCounter(p.cn) ? "secondary" : "primary",
+            toolTipContent:"{name}<br/><b>{x:DD.MM.YYYY HH:mm}</b>: {y}"+getYAxisSuffix(p.cn)
+          });
+        });
+      });
+
+      if (smallMultiplesMode){
+        renderSmallMultiples(selectedCids, keys, matrix, start, end);
+        var msg="Ready (Small Multiples).";
+        if (failCount){
+          msg += " Failures: "+failCount;
+          if (firstErr){
+            var st = firstErr.status || (firstErr.responseJSON && firstErr.responseJSON.status) || "";
+            if (st) msg += " (HTTP "+st+")";
+          }
+        }
+        setMessage(msg,false);
+        return;
+      }
+
+      if (!series.length){
+        $("#chartContainer").removeClass("sm-mode").empty();
+        var msg2="No data points for the selected range / filter.";
+        if (failCount){
+          msg2 += " Failures: "+failCount;
+        }
+        setMessage(msg2,true);
+        return;
+      }
+
+      var titleText = (keys.length===1) ? formatKeyLabel(keys[0]) : ("Selected counters ("+keys.length+")");
+      renderCombinedChart(titleText, start, end, series);
+
+      var msg3="Ready.";
+      if (failCount){
+        msg3 += " Failures: "+failCount;
+      }
+      setMessage(msg3,false);
+
+    }).catch(function(err){
+      if (mySeq !== perfReqSeq) return;
+
+      $("#chartContainer").removeClass("sm-mode").empty();
+      $("#resetZoomBtn").prop("disabled",true);
+
+      var msg="Request failed";
+      if (err){
+        if (err.status) msg += ". HTTP "+err.status;
+        else if (err.message) msg += ". "+err.message;
+      }
+      setMessage(msg,true);
+      console.error(err);
+
+    }).finally(function(){
+      if (mySeq !== perfReqSeq) return;
+      $("#refreshBtn").prop("disabled",false).text("Refresh");
+    });
+  }
+
+  /* Tiles logic (kept from your original widget). */
+  const hostToFriendlyRaw = {};
+  const hostToFriendly = {};
+
+  function normalizeSeverity(sev){
+    const s = String(sev ?? "").trim().toLowerCase();
+    if (s==="2") return "error";
+    if (s==="1") return "warning";
+    if (s==="0") return "information";
+    if (s==="error"||s==="critical") return "error";
+    if (s==="warning") return "warning";
+    if (s==="information"||s==="info") return "information";
+    return "warning";
+  }
+  function parseScomDate(v){
+    if(!v) return null;
+    if (typeof v==="string"){
+      const m=v.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//);
+      if(m){
+        const ms=parseInt(m[1],10);
+        if(!isNaN(ms)) return new Date(ms);
+      }
+    }
+    const d=new Date(v);
+    return isNaN(d.getTime())?null:d;
+  }
+  function formatDateTime(d){
+    if(!(d instanceof Date) || isNaN(d.getTime())) return null;
+    const day=String(d.getDate()).padStart(2,"0");
+    const month=String(d.getMonth()+1).padStart(2,"0");
+    const year=d.getFullYear();
+    const hour=String(d.getHours()).padStart(2,"0");
+    const min=String(d.getMinutes()).padStart(2,"0");
+    return `${day}.${month}.${year} ${hour}:${min}`;
+  }
+  function formatAgeFromMs(ms){
+    if(ms==null||isNaN(ms)||ms<0) return null;
+    const sec=Math.floor(ms/1000);
+    const min=Math.floor(sec/60);
+    const hr=Math.floor(min/60);
+    const day=Math.floor(hr/24);
+    if (day>0) return `${day}d ${hr%24}h`;
+    if (hr>0) return `${hr}h ${min%60}m`;
+    if (min>0) return `${min}m`;
+    return `${sec}s`;
+  }
+  function pickFirstField(obj,fields){
+    for(const f of fields){
+      if(obj && obj[f]!=null && obj[f]!=="") return obj[f];
+    }
+    return null;
+  }
+  function getAlertGeneratedTime(alert){
+    const v=pickFirstField(alert,["timeadded","timeAdded","timeraised","timeRaised","timegenerated","timeGenerated","timecreated","timeCreated","lastModified","lastmodified"]);
+    const d=parseScomDate(v);
+    return d?formatDateTime(d):null;
+  }
+  function getAlertAge(alert){
+    const a=pickFirstField(alert,["age","Age"]);
+    if(a!=null){
+      if(typeof a==="string") return a;
+      const d=parseScomDate(a);
+      if(d) return formatAgeFromMs(Date.now()-d.getTime());
+    }
+    const v=pickFirstField(alert,["timeadded","timeAdded","timeraised","timeRaised","timegenerated","timeGenerated","timecreated","timeCreated","lastModified","lastmodified"]);
+    const d=parseScomDate(v);
+    return d?formatAgeFromMs(Date.now()-d.getTime()):null;
+  }
+  function getAlertSource(alert){
+    const v=pickFirstField(alert,["alertsource","alertSource","source","sourceName","monitoringsource","monitoringSource","sourcename","origin"]);
+    if(v && String(v).toLowerCase()!=="monitor") return v;
+    if(alert.monitoringobjectdisplayname && alert.monitoringobjectdisplayname!==alert.name){
+      return alert.monitoringobjectdisplayname;
+    }
+    return null;
+  }
+  function dedupeAlerts(alerts){
+    const seen=new Set();
+    const out=[];
+    for(const a of (alerts||[])){
+      const key = `id:${a.id}k:${a.name}|${a.severity}|${a.monitoringobjectdisplayname}|${a.timeadded}|${a.timeraised}`;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      out.push(a);
+    }
+    return out;
+  }
+  function extractFqdnLike(text){
+    const t=String(text||"");
+    const m=t.match(/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/);
+    return m?m[1]:null;
+  }
+  function normalizeHealthState(v){
+    const mapNum={0:"unknown",1:"healthy",2:"warning",3:"critical"};
+    if (typeof v==="string"){
+      const lower=v.toLowerCase().trim();
+      if (["critical","warning","healthy","unmonitored","unknown"].includes(lower)) return lower;
+    }
+    const num=Number(v);
+    if (!isNaN(num) && mapNum.hasOwnProperty(num)) return mapNum[num];
+    return "unknown";
+  }
+  function isInMaintenance(mode){
+    return mode===true||mode==="true"||mode===1||mode==="1";
+  }
+
+  function loadTilesForSelectedComputers(compIds){
+    $("#tiles").html('<div class="loading">Lade Daten…</div>');
+    if (!compIds || !compIds.length){
+      $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+      return;
+    }
+    const objectIds={};
+    compIds.forEach(id=>objectIds[id]= -1);
+    $.ajax({
+      url:"/OperationsManager/data/state",
+      type:"POST",
+      headers:requestHeaders,
+      data:JSON.stringify({
+        classId:"System.Library!System.Computer",
+        objectIds:objectIds,
+        criteria:"((HealthState = '0') OR (HealthState = '1') OR (HealthState = '2') OR (HealthState = '3') OR HealthState is null)",
+        displayColumns:["displayname","healthstate","id","path","maintenancemode"],
+        _ts:Date.now()
+      })
+    }).done(stateResult=>{
+      const computers=stateResult.rows||[];
+      loadTileAlerts(computers,objectIds);
+    }).fail(()=>{
+      $("#tiles").html('<p style="color:#d9534f;">Fehler beim Laden der Computer-Daten.</p>');
+    });
+  }
+
+  function loadTileAlerts(computers,objectIds){
+    if (!computers.length){
+      $("#tiles").html('<p style="color:#777;">Keine Objekte gefunden.</p>');
+      return;
+    }
+    $.ajax({
+      url:"/OperationsManager/data/alert",
+      type:"POST",
+      headers:requestHeaders,
+      data:JSON.stringify({
+        classId:null,
+        objectIds:objectIds,
+        criteria:"((Severity = '2') OR (Severity = '1')) AND (ResolutionState = '0')",
+        displayColumns:["id","severity","name","monitoringobjectdisplayname","monitoringobjectpath","monitoringobjectid","description","principalname","age","timeadded","lastModified","timeraised","timegenerated","timecreated","alertsource","source","monitoringsource"],
+        _ts:Date.now()
+      })
+    }).done(alertResult=>{
+      const alertsByComputerId={};
+      const alertsByComputerName={};
+      const rows=alertResult.rows||[];
+      rows.forEach(alert=>{
+        if (alert.monitoringobjectid){
+          if (!alertsByComputerId[alert.monitoringobjectid]) alertsByComputerId[alert.monitoringobjectid]=[];
+          alertsByComputerId[alert.monitoringobjectid].push(alert);
+        }
+        if (alert.monitoringobjectdisplayname){
+          const k=alert.monitoringobjectdisplayname.toLowerCase();
+          if (!alertsByComputerName[k]) alertsByComputerName[k]=[];
+          alertsByComputerName[k].push(alert);
+        }
+        if (alert.monitoringobjectpath){
+          const fqdn=extractFqdnLike(alert.monitoringobjectpath);
+          if (fqdn){
+            const k=fqdn.toLowerCase();
+            if (!alertsByComputerName[k]) alertsByComputerName[k]=[];
+            alertsByComputerName[k].push(alert);
+          }
+        }
+      });
+      renderTiles(computers,alertsByComputerId,alertsByComputerName);
+    }).fail(()=>{
+      renderTiles(computers,{},{}); 
+    });
+  }
+
+  function renderTiles(rows,alertsByComputerId,alertsByComputerName){
+    const order={critical:0,warning:1,healthy:2,unmonitored:3,unknown:4};
+    rows.sort((a,b)=>{
+      const aKey=normalizeHealthState(a.healthstate);
+      const bKey=normalizeHealthState(b.healthstate);
+      return (order[aKey]||99)-(order[bKey]||99);
+    });
+    const $grid=$("#tiles").empty();
+    let renderedCount=0;
+    rows.forEach(row=>{
+      const stateKey=normalizeHealthState(row.healthstate);
+      const cssClass={
+        critical:"state-critical",
+        healthy:"state-healthy",
+        warning:"state-warning",
+        unmonitored:"state-unmonitored",
+        unknown:"state-unknown"
+      }[stateKey]||"state-unknown";
+      const originalHost=row.displayname||"unbekannt";
+      const friendlyName=originalHost;
+
+      let alerts=alertsByComputerId[row.id]||[];
+      if (!alerts.length) alerts=alertsByComputerName[originalHost.toLowerCase()]||[];
+      alerts=dedupeAlerts(alerts);
+      const hasAlerts=alerts.length>0;
+
+      const $tile=$("<div>",{
+        "class": `tile ${cssClass} ${hasAlerts?"has-alerts":""}`,
+        title: row.path||"",
+        click:()=>{
+          if (!row.id) return;
+          const link = `/OperationsManager/#/monitoring/drilldown/object/${encodeURIComponent(row.id)}`;
+          window.open(link,"_blank");
+        }
+      });
+
+      let html = `<div class="tile-header">`;
+      html += `<span class="friendly-name">${escapeHtml(friendlyName)}</span>`;
+      html += `<div class="alert-count">${alerts.length} Alert(s)</div>`;
+      html += `</div>`;
+
+      if (hasAlerts){
+        html += `<div class="alerts-section">`;
+        alerts.forEach(alert=>{
+          const sev=normalizeSeverity(alert.severity);
+          const isCritical=(sev==="error");
+          const severityClass=isCritical?"alert-critical":"alert-warning";
+          const severityText=isCritical?"Error":"Warning";
+          const alertTime=getAlertGeneratedTime(alert);
+          const alertAge=getAlertAge(alert);
+          const alertSource=getAlertSource(alert);
+          html += `<div class="alert-item ${severityClass}">`;
+          html += `<div class="alert-name">${escapeHtml(alert.name||"Unbekannter Alert")}</div>`;
+          html += `<div class="alert-severity">${severityText}</div>`;
+          if (alertTime||alertAge||alertSource){
+            html += `<div class="alert-meta">`;
+            if (alertTime)   html += `<span class="alert-meta-item">🕒 ${escapeHtml(alertTime)}</span>`;
+            if (alertAge)    html += `<span class="alert-meta-item">⏳ ${escapeHtml(alertAge)}</span>`;
+            if (alertSource) html += `<span class="alert-meta-item">📍 ${escapeHtml(alertSource)}</span>`;
+            html += `</div>`;
+          }
+          html += `</div>`;
+        });
+        html += `</div>`;
+      }
+
+      $tile.html(html);
+
+      if (isInMaintenance(row.maintenancemode)){
+        $tile.append('<span class="tile-indicator maintenance">🔧</span>');
+      }
+
+      $grid.append($tile);
+      renderedCount++;
+    });
+
+    if (!renderedCount){
+      $grid.html('<p style="color:#777;">Keine Objekte gefunden.</p>');
+    }
+  }
+
+  function resetAll(){
+    clearTimeout(autoTimer);
+    $("#resetZoomBtn").prop("disabled",true);
+
+    $("#groupSelect").val("").trigger("change");
+    $("#computerSearch").val("");
+    $("#targetSearch").val("");
+
+    var allList = Object.values(allComputersMap);
+    allList.sort((a,b)=> (a.displayname||"").toLowerCase().localeCompare((b.displayname||"").toLowerCase()));
+    populateComputerSelect(allList);
+
+    $("#computerSelect").val([]);
+    computerSelectExpanded = false;
+    $("#toggleComputerBtn").text("Expand");
+    $("#computerSelect").attr("size",1);
+
+    $("#daysSelect").val(defaultDays);
+    initDates();
+
+    $("#objectTypeSelect")
+        .empty()
+        .append($("<option>",{value:"",text:"-- Select computer first --"}))
+        .prop("disabled",true);
+
+    $("#counterSelect").empty().val([]);
+    $("#counterDropdownPanel").empty();
+    setCounterDropdownLabel();
+
+    $("#instanceWrap").hide();
+    $("#instanceSelect").empty();
+
+    computersAll = [];
+    counterMapByObject = {};
+
+    setMessage("",false);
+    $("#summaryLine").text("Select Group → Computer → Object type → Counter.");
+
+    $("#chartContainer").removeClass("sm-mode").empty();
+    currentChart=null;
+
+    $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+
+    $("#refreshBtn").prop("disabled",false).text("Refresh");
+  }
+
+  function wireEvents(){
+    $("#toggleFiltersBtn").on("click",function(){
+      const $p=$("#filtersPanel");
+      const collapsed=$p.hasClass("is-collapsed");
+      if (collapsed){
+        $p.removeClass("is-collapsed");
+        $(this).text("Hide filters");
+      }else{
+        $p.addClass("is-collapsed");
+        $(this).text("Show filters");
+      }
+    });
+
+    $("#resetZoomBtn").on("click",function(){
+      if (currentChart && currentChart.resetZoom) currentChart.resetZoom();
+    });
+
+    $("#reloadGroupsBtn").on("click",function(){ loadGroups(); });
+
+    $("#groupSelect").on("change",function(){
+      const gid=$(this).val();
+      computersAll=[];
+      applyComputerFilterAndPopulate();
+      counterMapByObject={};
+
+      $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"-- Select computer first --"})).prop("disabled",true);
+
+      $("#counterSelect").empty().val([]);
+      $("#counterDropdownPanel").empty();
+      setCounterDropdownLabel();
+
+      $("#instanceWrap").hide();
+      $("#instanceSelect").empty();
+
+      updateSummary();
+      if (!gid) return;
+      loadComputersForGroup(gid);
+    });
+
+    $("#computerSearch").on("input",function(){
+      const term = $(this).val().toLowerCase().trim();
+      let list;
+      if (term){
+        list = Object.values(allComputersMap).filter(c => {
+          const dn = (c.displayname||"").toLowerCase();
+          const p  = (c.path||"").toLowerCase();
+          return dn.includes(term) || p.includes(term);
+        });
+      }else{
+        list = Object.values(allComputersMap);
+      }
+      list.sort((a,b)=> (a.displayname||"").toLowerCase().localeCompare((b.displayname||"").toLowerCase()));
+      populateComputerSelect(list);
+      updateSummary();
+    }).on("keydown",function(e){
+      if (e.key==="Enter") e.preventDefault();
+    });
+
+    $("#reloadComputersBtn").on("click",function(){
+      const gid=$("#groupSelect").val();
+      if (!gid){ setMessage("Select a group.",true); return; }
+      loadComputersForGroup(gid);
+    });
+
+    $("#toggleComputerBtn").on("click",function(){
+      computerSelectExpanded=!computerSelectExpanded;
+      $("#computerSelect").attr("size",computerSelectExpanded?6:1);
+      $(this).text(computerSelectExpanded?"Collapse":"Expand");
+    });
+
+    $("#computerSelect").on("change",function(){
+      const selected=$(this).val()||[];
+      counterMapByObject={};
+
+      $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"-- Select computer first --"})).prop("disabled",true);
+
+      $("#counterSelect").empty().val([]);
+      $("#counterDropdownPanel").empty();
+      setCounterDropdownLabel();
+
+      $("#instanceWrap").hide();
+      $("#instanceSelect").empty();
+
+      updateSummary();
+
+      if (!selected.length){
+        $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+        $("#chartContainer").removeClass("sm-mode").empty();
+        currentChart=null;
+        return;
+      }
+
+      loadCountersForSelectedComputers(selected);
+      loadTilesForSelectedComputers(selected);
+    });
+
+    $("#reloadCountersBtn").on("click",function(){
+      const selected=$("#computerSelect").val()||[];
+      if (!selected.length){ setMessage("Select a computer.",true); return; }
+      loadCountersForSelectedComputers(selected);
+    });
+
+    $("#objectTypeSelect").on("change",function(){
+      populateCounterDropdownForObjectType();
+      updateSummary();
+    });
+
+    $("#counterDropdownBtn").on("click",function(e){
+      e.preventDefault();
+      $("#counterDropdownPanel").toggleClass("is-open");
+    });
+
+    $(document).on("click",function(e){
+      if ($(e.target).closest(".dd").length===0) closeCounterDropdown();
+    });
+
+    $("#counterDropdownPanel").on("change","input[type=checkbox]",function(){
+      syncHiddenCounterSelectFromCheckboxes();
+    });
+
+    $("#instanceSelect").on("change",function(){ scheduleAutoLoad(); });
+    $("#daysSelect").on("change",function(){ syncDatesFromDays(); scheduleAutoLoad(); });
+    $("#startDateTime,#endDateTime").on("change",function(){ scheduleAutoLoad(); });
+    $("#targetSearch").on("input",function(){ scheduleAutoLoad(); });
+
+    $("#refreshBtn").on("click",function(){ loadAndRender(); });
+    $("#resetAllBtn").on("click",function(){ resetAll(); });
+
+    let resizeTimer=null;
+    $(window).on("resize",function(){
+      if (!currentChart) return;
+      clearTimeout(resizeTimer);
+      resizeTimer=setTimeout(()=>{ currentChart.render(); },150);
+    });
+  }
+
+  function startup(){
+    initDays();
+    initDates();
+
+    $("#groupSelect").empty().append($("<option>",{value:"",text:"Loading…"}));
+    $("#computerSelect").empty().append($("<option>",{value:"",text:"-- Select group first – expand to select --"}));
+    $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"-- Select computer first --"})).prop("disabled",true);
+
+    setCounterDropdownLabel();
+    $("#counterDropdownPanel").empty();
+    $("#counterSelect").empty().val([]);
+
+    $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+    $("#chartContainer").empty();
+
+    wireEvents();
+    loadGroups();
+    updateSummary();
+  }
+  $(document).ready(startup);
+})();
+</script>
+</body>
+</html>
