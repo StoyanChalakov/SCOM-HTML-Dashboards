@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -14,9 +14,9 @@
         and port of the page that is already open.
 
         Example:
-        If this widget is loaded from http://SCOM01.demo.local/OperationsManager/...
+        If this widget is loaded from http://Server01.domain.com/OperationsManager/...
         then "/dashboardlibs/jquery.js" automatically becomes:
-        http://SCOM01.demo.local/dashboardlibs/jquery.js
+        http://Server01.domain.com/dashboardlibs/jquery.js
 
         This is why the full server name does not have to be written explicitly
         in every script reference or API call.
@@ -117,9 +117,9 @@
     // Optional mapping from technical host name to a nicer business-friendly label.
     // This is purely for presentation and does not affect data collection.
     const hostToFriendly = {
-        "dc01.demo.local":"Domain Controller",
-        "srv01.demo.local":"Development Server",
-        "scom01.demo.local":"SCOM Server"
+        "dc01.domain.com":"Domain Controller",
+        "srv01.domain.com":"Development Server",
+        "Server01.domain.com":"SCOM Server"
     };
 
     // This helper tries a few different host name formats so the mapping still works
@@ -156,10 +156,10 @@
     //
     // The same host-relative URL concept is used again below for API calls.
     // Example:
-    // "/OperationsManager/data/state" does not hardcode SCOM01.demo.local,
+    // "/OperationsManager/data/state" does not hardcode Server01.domain.com,
     // because the browser automatically expands it to the current web server,
     // for example:
-    // http://SCOM01.demo.local/OperationsManager/data/state
+    // http://Server01.domain.com/OperationsManager/data/state
     const requestHeaders = {
         Accept: 'q=0.8;application/json;q=0.9',
         "Content-Type": "application/json"

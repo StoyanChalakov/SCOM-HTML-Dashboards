@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -206,7 +206,7 @@
   <div id="topBar">
     <div id="topLeft">
       <div id="title">Small Multiples - System Overview</div>
-      <div id="summary">Initializing…</div>
+      <div id="summary">Initializingâ€¦</div>
     </div>
     <div id="topRight">
       <button id="toggleFiltersBtn" type="button">Hide filters</button>
@@ -321,8 +321,8 @@
   // Friendly name mapping (extend as needed)
     var hostToFriendly = {
       // Optional demo mapping:
-      // "server01.demo.local":"Application Server 01",
-      // "server02.demo.local":"Database Server 01"
+      // "server01.domain.com":"Application Server 01",
+      // "server02.domain.com":"Database Server 01"
     };
   function getFriendly(host){
     return (host && hostToFriendly[host]) ? hostToFriendly[host] : "";
@@ -573,8 +573,8 @@
   }
 
   function loadAll(){
-    $('#refreshBtn').prop('disabled', true).text('Loading…');
-    setMessage("Loading performance data…", false);
+    $('#refreshBtn').prop('disabled', true).text('Loadingâ€¦');
+    setMessage("Loading performance dataâ€¦", false);
 
     var groupId = $('#groupSelect').val();
     if (!groupId){

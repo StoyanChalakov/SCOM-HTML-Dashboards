@@ -1,4 +1,4 @@
-<!DOCTYPE HTML>
+﻿<!DOCTYPE HTML>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -228,8 +228,8 @@
         // Host name -> friendly name mapping
         var hostToFriendly = {
             // Optional demo mapping:
-            // "server01.demo.local":"Application Server 01",
-            // "server02.demo.local":"Database Server 01"
+            // "server01.domain.com":"Application Server 01",
+            // "server02.domain.com":"Database Server 01"
         };
         function getFriendlyName(host){ return host && hostToFriendly[host] ? hostToFriendly[host] : ""; }
         function shortHost(host){ return host ? host.split(".")[0] : ""; }
@@ -417,7 +417,7 @@
 
             // UI-Feedback
             $('#refreshBtn').prop('disabled',true).text('Loading...');
-            $('#chartContainer').html('Loading…');
+            $('#chartContainer').html('Loadingâ€¦');
 
             // ---------- Time range ----------
             var startStr   = $('#startDateTimeSelect').val();          // User start date
