@@ -1,4 +1,4 @@
-<!DOCTYPE HTML>
+﻿<!DOCTYPE HTML>
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
@@ -362,7 +362,7 @@
   <div id="topBar">
     <div id="topLeft">
       <div id="widgetTitle">Performance Widget</div>
-      <div id="summaryLine">Initializing…</div>
+      <div id="summaryLine">Initializingâ€¦</div>
     </div>
     <div id="topRight">
       <button id="toggleFiltersBtn" class="secondary" type="button">Hide filters</button>
@@ -406,7 +406,7 @@
         <div class="dd">
           <button id="counterDropdownBtn" type="button" class="dd-btn">
             <span id="counterDropdownLabel">-- Select counter(s) --</span>
-            <span>▾</span>
+            <span>â–¾</span>
           </button>
           <div id="counterDropdownPanel" class="dd-panel"></div>
           <select id="counterSelect" multiple style="display:none;"></select>
@@ -445,7 +445,7 @@
     </div>
     <div class="filters-logo" aria-hidden="true">
       <div class="logo-card">
-        <img src="/dashboardlibs/POHN_IT_Logo.png" alt="POHN IT logo" />
+        <img src="/dashboardlibs/Company_Logo.png" alt="POHN IT logo" />
       </div>
     </div>
   </div>
@@ -469,7 +469,7 @@
   var groupNamePrefix = "";
   var groupNameContains = "";
   var AUTOLOAD_DEBOUNCE_MS = 350;
-  const ALL_WINDOWS_GROUP_ID = "9c95accb-2417-b6d9-dd03-b39e896fccab";
+  const ALL_WINDOWS_GROUP_ID = "Put your SCOM group ID here";
 
   var groupsAll = [];
   var computersAll = [];
@@ -614,7 +614,7 @@ function isPercentCounter(counterName){
     return isPercentCounter(counterName) ? " %" : "";
   }
   function formatLastValue(v, counterName){
-    if (v==null || isNaN(v)) return "–";
+    if (v==null || isNaN(v)) return "â€“";
     if (isPercentCounter(counterName)) return Math.round(v).toString()+" %";
     try { return Math.round(v).toLocaleString(); } catch(e){ return String(Math.round(v)); }
   }
@@ -683,11 +683,11 @@ function isPercentCounter(counterName){
       pieces.push("Counter: "+keys.map(formatKeyLabel).join(", "));
     }
     if (start && !isNaN(start.getTime()) && end && !isNaN(end.getTime())){
-      pieces.push("Range: "+formatHuman(start)+" – "+formatHuman(end));
+      pieces.push("Range: "+formatHuman(start)+" â€“ "+formatHuman(end));
     }
     var tf=($("#targetSearch").val()||"").trim();
     if (tf) pieces.push("Filter: "+tf);
-    $("#summaryLine").text(pieces.length?pieces.join(" | "):"Select Group → Computer → Object type → Counter.");
+    $("#summaryLine").text(pieces.length?pieces.join(" | "):"Select Group â†’ Computer â†’ Object type â†’ Counter.");
   }
 
   function selectionsReady(){
@@ -735,8 +735,8 @@ function isPercentCounter(counterName){
 
   function loadGroups(){
     $("#groupSelect").prop("disabled",true).empty()
-      .append($("<option>",{value:"",text:"Loading groups…"}));
-    setMessage("Loading groups…",false);
+      .append($("<option>",{value:"",text:"Loading groupsâ€¦"}));
+    setMessage("Loading groupsâ€¦",false);
     updateSummary();
 
     var criteria=buildGroupCriteria();
@@ -760,7 +760,7 @@ function isPercentCounter(counterName){
 
       var hasFilter = !!((groupNamePrefix && groupNamePrefix.trim()) || (groupNameContains && groupNameContains.trim()));
       if (!scope.length && hasFilter){
-        setMessage("No groups matched the configured filter. Retrying without a group filterâ€¦",false);
+        setMessage("No groups matched the configured filter. Retrying without a group filterÃ¢â‚¬Â¦",false);
         requestGroups("DisplayName LIKE '%'").done(populateGroups).fail(function(xhr){
           $("#groupSelect").prop("disabled",false).empty()
             .append($("<option>",{value:"",text:"Failed (HTTP "+xhr.status+")"}));
@@ -793,9 +793,9 @@ function isPercentCounter(counterName){
   }
 
   function loadAllComputers(){
-    setMessage("Lade Computer aller Gruppen…",false);
+    setMessage("Lade Computer aller Gruppenâ€¦",false);
     $("#computerSelect").prop("disabled",true).empty()
-        .append($("<option>",{value:"",text:"Loading computers…"}));
+        .append($("<option>",{value:"",text:"Loading computersâ€¦"}));
 
     var promises = groupsAll.map(g => {
       var payload = { classId: WINDOWS_COMPUTER_CLASS, objectIds: {}, displayColumns: ["id","displayname","path"] };
@@ -826,8 +826,8 @@ function isPercentCounter(counterName){
 
   function loadComputersForGroup(groupId){
     $("#computerSelect").prop("disabled",true).empty()
-      .append($("<option>",{value:"",text:"Loading computers…"}));
-    setMessage("Loading computers…",false);
+      .append($("<option>",{value:"",text:"Loading computersâ€¦"}));
+    setMessage("Loading computersâ€¦",false);
     updateSummary();
     var payload={classId:WINDOWS_COMPUTER_CLASS,objectIds:{},displayColumns:["id","displayname","path"]};
     payload.objectIds[groupId] = -1;
@@ -875,7 +875,7 @@ function isPercentCounter(counterName){
     var vals=$("#counterSelect").val()||[];
     if (!vals.length) $("#counterDropdownLabel").text("-- Select counter(s) --");
     else if (vals.length===1) $("#counterDropdownLabel").text(formatKeyLabel(vals[0]));
-    else $("#counterDropdownLabel").text(vals.length+" ausgewählt");
+    else $("#counterDropdownLabel").text(vals.length+" ausgewÃ¤hlt");
   }
 
   function populateCounterDropdownForObjectType(){
@@ -979,7 +979,7 @@ function isPercentCounter(counterName){
   function loadCountersForSelectedComputers(ids){
     counterMapByObject={};
 
-    $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"Loading…"})).prop("disabled",true);
+    $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"Loadingâ€¦"})).prop("disabled",true);
 
     $("#counterSelect").empty().val([]);
     $("#counterDropdownPanel").empty();
@@ -987,7 +987,7 @@ function isPercentCounter(counterName){
     $("#instanceWrap").hide();
     $("#instanceSelect").empty();
 
-    setMessage("Loading counters…",false);
+    setMessage("Loading countersâ€¦",false);
     updateSummary();
 
     const ajaxCalls = (ids||[]).map(id => $.ajax({
@@ -1239,7 +1239,7 @@ return inst;
         if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return computerName+" - "+inst;
         return computerName;
       }else{
-        var base = formatKeyLabel(key) + " — " + computerName;
+        var base = formatKeyLabel(key) + " â€” " + computerName;
         if (drive) return base+" - "+drive;
         if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return base+" - "+inst;
         return base;
@@ -1250,7 +1250,7 @@ return inst;
       if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return computerName+" ("+inst+")";
       return computerName;
     }else{
-      var base2 = formatKeyLabel(key) + " — " + computerName;
+      var base2 = formatKeyLabel(key) + " â€” " + computerName;
       if (inst && inst!=="%" && inst.toLowerCase()!=="_total") return base2+" ("+inst+")";
       return base2;
     }
@@ -1423,7 +1423,7 @@ return inst;
           var lines = entries.map(function(en){
             var n = (en.dataSeries && en.dataSeries.name) ? en.dataSeries.name : "";
             var y = (en.dataPoint && en.dataPoint.y!=null) ? en.dataPoint.y : null;
-            var yTxt = (y==null || isNaN(y)) ? "–" : (function(){
+            var yTxt = (y==null || isNaN(y)) ? "â€“" : (function(){
               try { return Math.round(y).toLocaleString(); } catch(_){ return String(Math.round(y)); }
             })();
             return escapeHtml(n) + ": <b>" + yTxt + (suffix ? suffix : "") + "</b>";
@@ -1501,7 +1501,7 @@ return inst;
         var sparkId="sp_"+idx+"_"+kIdx;
         var $spark=$('<div class="spark">').attr("id",sparkId);
 
-        var valueText="–";
+        var valueText="â€“";
         var extraNote=null;
 
         if (cell && cell.seriesByInst){
@@ -1540,7 +1540,7 @@ return inst;
             var total = entries.length;
             var shown = entries.slice(0, Math.max(1, MAX_SM_LINES_PER_CELL));
             var hiddenCount = Math.max(0, total - shown.length);
-            if (hiddenCount>0) extraNote = "… (+"+hiddenCount+" more)";
+            if (hiddenCount>0) extraNote = "â€¦ (+"+hiddenCount+" more)";
 
             var summary = summarizeMultiInstanceLast(p.cn, cell.seriesByInst);
             valueText = (summary==null) ? (total+" inst") : (formatLastValue(summary, p.cn) + " ("+total+")");
@@ -1694,8 +1694,8 @@ return inst;
     var mySeq = ++perfReqSeq;
     abortActivePerfRequests();
 
-    $("#refreshBtn").prop("disabled",true).text("Loading…");
-    setMessage("Loading performance data…",false);
+    $("#refreshBtn").prop("disabled",true).text("Loadingâ€¦");
+    setMessage("Loading performance dataâ€¦",false);
     $("#resetZoomBtn").prop("disabled",true);
     currentChart=null;
 
@@ -1949,9 +1949,9 @@ return inst;
   }
 
   function loadTilesForSelectedComputers(compIds){
-    $("#tiles").html('<div class="loading">Lade Daten…</div>');
+    $("#tiles").html('<div class="loading">Lade Datenâ€¦</div>');
     if (!compIds || !compIds.length){
-      $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+      $("#tiles").html('<p style="color:#777;">Keine Computer ausgewÃ¤hlt.</p>');
       return;
     }
     const objectIds={};
@@ -2076,9 +2076,9 @@ return inst;
           html += `<div class="alert-severity">${severityText}</div>`;
           if (alertTime||alertAge||alertSource){
             html += `<div class="alert-meta">`;
-            if (alertTime)   html += `<span class="alert-meta-item">🕒 ${escapeHtml(alertTime)}</span>`;
-            if (alertAge)    html += `<span class="alert-meta-item">⏳ ${escapeHtml(alertAge)}</span>`;
-            if (alertSource) html += `<span class="alert-meta-item">📍 ${escapeHtml(alertSource)}</span>`;
+            if (alertTime)   html += `<span class="alert-meta-item">ðŸ•’ ${escapeHtml(alertTime)}</span>`;
+            if (alertAge)    html += `<span class="alert-meta-item">â³ ${escapeHtml(alertAge)}</span>`;
+            if (alertSource) html += `<span class="alert-meta-item">ðŸ“ ${escapeHtml(alertSource)}</span>`;
             html += `</div>`;
           }
           html += `</div>`;
@@ -2089,7 +2089,7 @@ return inst;
       $tile.html(html);
 
       if (isInMaintenance(row.maintenancemode)){
-        $tile.append('<span class="tile-indicator maintenance">🔧</span>');
+        $tile.append('<span class="tile-indicator maintenance">ðŸ”§</span>');
       }
 
       $grid.append($tile);
@@ -2137,12 +2137,12 @@ return inst;
     counterMapByObject = {};
 
     setMessage("",false);
-    $("#summaryLine").text("Select Group → Computer → Object type → Counter.");
+    $("#summaryLine").text("Select Group â†’ Computer â†’ Object type â†’ Counter.");
 
     $("#chartContainer").removeClass("sm-mode").empty();
     currentChart=null;
 
-    $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+    $("#tiles").html('<p style="color:#777;">Keine Computer ausgewÃ¤hlt.</p>');
 
     $("#refreshBtn").prop("disabled",false).text("Refresh");
   }
@@ -2233,7 +2233,7 @@ return inst;
       updateSummary();
 
       if (!selected.length){
-        $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+        $("#tiles").html('<p style="color:#777;">Keine Computer ausgewÃ¤hlt.</p>');
         $("#chartContainer").removeClass("sm-mode").empty();
         currentChart=null;
         return;
@@ -2287,15 +2287,15 @@ return inst;
     initDays();
     initDates();
 
-    $("#groupSelect").empty().append($("<option>",{value:"",text:"Loading…"}));
-    $("#computerSelect").empty().append($("<option>",{value:"",text:"-- Select group first – expand to select --"}));
+    $("#groupSelect").empty().append($("<option>",{value:"",text:"Loadingâ€¦"}));
+    $("#computerSelect").empty().append($("<option>",{value:"",text:"-- Select group first â€“ expand to select --"}));
     $("#objectTypeSelect").empty().append($("<option>",{value:"",text:"-- Select computer first --"})).prop("disabled",true);
 
     setCounterDropdownLabel();
     $("#counterDropdownPanel").empty();
     $("#counterSelect").empty().val([]);
 
-    $("#tiles").html('<p style="color:#777;">Keine Computer ausgewählt.</p>');
+    $("#tiles").html('<p style="color:#777;">Keine Computer ausgewÃ¤hlt.</p>');
     $("#chartContainer").empty();
 
     wireEvents();
