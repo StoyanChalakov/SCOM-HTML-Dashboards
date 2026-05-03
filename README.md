@@ -46,18 +46,89 @@ These examples are designed for environments where the HTML files are loaded in 
 ```text
 /OperationsManager/data/state
 /OperationsManager/data/alert
+/OperationsManager/data/performance
 /OperationsManager/data/scomGroups
+/OperationsManager/data/objectInformation/{id}
+/OperationsManager/data/performanceCounters/{id}
 ```
 
-The dashboards also reference shared JavaScript and image assets under `/dashboardlibs/`, for example:
+The dashboards read the `SCOM-CSRF-TOKEN` browser cookie and send it back as the `SCOM-CSRF-TOKEN` request header. Missing or invalid CSRF token handling can cause SCOM REST calls to fail.
 
-```text
-/dashboardlibs/jquery.js
-/dashboardlibs/highcharts.js
-/dashboardlibs/Company_Logo.png
+## JavaScript Libraries and Assets
+
+The dashboard examples reference shared files under `/dashboardlibs/`. The current code uses these library files:
+
+| File | Used for |
+| --- | --- |
+| `/dashboardlibs/jquery.js` | DOM handling, events, CSRF token handling, and SCOM REST API calls through `$.ajax`. This is the base dependency for the examples. |
+| `/dashboardlibs/canvasjs.min.js` | Charting for the performance widgets, small-multiple views, and explorer-style dashboards. |
+| `/dashboardlibs/highcharts.js` | Core charting library for alert, health, hotspot, and operations overview dashboards. |
+| `/dashboardlibs/highcharts-3d.js` | Highcharts 3D extension used by severity and health-state chart examples. |
+| `/dashboardlibs/modules/exporting.js` | Highcharts export module used by the Highcharts-based dashboards. |
+| `/dashboardlibs/Company_Logo.png` | Optional logo image displayed by the dashboards that include branding. |
+
+Dependency map by dashboard type:
+
+| Dashboard type | Typical dependencies |
+| --- | --- |
+| State, alert, and hosted-object widgets | jQuery |
+| Performance widgets, small multiples, and explorer dashboards | jQuery + CanvasJS |
+| Highcharts-based visualizations | jQuery + Highcharts |
+| Highcharts charts with export buttons | jQuery + Highcharts + `modules/exporting.js` |
+
+Download third-party libraries from their official sources and review their license terms for your intended use.
+
+## Hosting the Libraries with an IIS Virtual Directory
+
+The HTML files use absolute paths such as:
+
+```html
+<script src="/dashboardlibs/jquery.js"></script>
+<script src="/dashboardlibs/highcharts.js"></script>
+<script src="/dashboardlibs/modules/exporting.js"></script>
 ```
 
-Make sure these files exist in your SCOM web environment, or adjust the paths in the HTML files to match your own location.
+Because the paths start with `/dashboardlibs/`, create the virtual directory at the root of the IIS site that hosts the SCOM web console, not inside the `OperationsManager` application.
+
+Short IIS setup:
+
+1. Create a physical folder on the SCOM web console server, for example:
+
+   ```text
+   C:\inetpub\dashboardlibs
+   ```
+
+2. Copy the required JavaScript files and `Company_Logo.png` into that folder. Keep the Highcharts export module in a `modules` subfolder:
+
+   ```text
+   C:\inetpub\dashboardlibs\jquery.js
+   C:\inetpub\dashboardlibs\canvasjs.min.js
+   C:\inetpub\dashboardlibs\highcharts.js
+   C:\inetpub\dashboardlibs\highcharts-3d.js
+   C:\inetpub\dashboardlibs\modules\exporting.js
+   C:\inetpub\dashboardlibs\Company_Logo.png
+   ```
+
+3. Open IIS Manager.
+
+4. Select the IIS site that hosts the SCOM web console.
+
+5. Add a virtual directory with:
+
+   ```text
+   Alias: dashboardlibs
+   Physical path: C:\inetpub\dashboardlibs
+   ```
+
+6. Make sure the IIS application pool identity or web server users can read the folder.
+
+7. Test the virtual directory from a browser:
+
+   ```text
+   https://<your-scom-web-server>/dashboardlibs/jquery.js
+   ```
+
+   If the file downloads or displays, the dashboard script references can resolve correctly.
 
 ## Customization
 
